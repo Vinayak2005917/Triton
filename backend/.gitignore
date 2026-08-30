@@ -9,3 +9,4 @@ wheels/
 # Virtual environments
 .venv
 .env
+backend\en_US-lessac-medium.onnx
