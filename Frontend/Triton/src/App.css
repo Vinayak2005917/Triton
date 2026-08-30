@@ -177,6 +177,50 @@ input {
   color: #888888;
 }
 
+.waveform {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  height: 38px;
+  padding: 0 14px;
+}
+
+.waveform span {
+  flex: 1;
+  min-width: 2px;
+  max-width: 5px;
+  border-radius: 999px;
+  background: #f5f5f5;
+  transition: height 80ms ease;
+}
+
+.transcribing {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 14px;
+  color: #888888;
+  font-size: 0.9rem;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #555555;
+  border-top-color: #f5f5f5;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .composer button {
   padding: 10px 18px;
   border: 0;
@@ -188,6 +232,11 @@ input {
 
 .composer button:active {
   opacity: 0.8;
+}
+
+.composer button:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 
 @media (max-width: 480px) {
