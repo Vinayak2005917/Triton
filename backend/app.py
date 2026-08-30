@@ -15,8 +15,8 @@ app.add_middleware(
 )
 
 @app.post("/ask")
-async def ask(query: str):
-    response = ask_agent(query)
+async def ask(query: str, Thread_id: str):
+    response = await ask_agent(query, Thread_id)
     return {"response": response}
 
 if __name__ == "__main__":

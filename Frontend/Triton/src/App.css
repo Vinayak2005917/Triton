@@ -30,14 +30,59 @@ input {
   min-height: 100vh;
   margin: 0 auto;
   flex-direction: column;
-  padding: 32px 24px 24px;
+  padding: 32px 24px 96px;
+}
+
+.welcome {
+  position: fixed;
+  top: calc(50% - 130px);
+  left: 50%;
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 4rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  opacity: 0.58;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transition: opacity 250ms ease, transform 250ms ease;
+  z-index: 1;
+}
+
+.has-messages .welcome {
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -10px);
+}
+
+.thread-control {
+  display: flex;
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  align-items: center;
+  gap: 8px;
+  color: #888888;
+  font-size: 0.8rem;
+  z-index: 11;
+}
+
+.thread-control input {
+  width: 120px;
+  padding: 6px 10px;
+  border: 1px solid #363636;
+  border-radius: 999px;
+  outline: 0;
+  color: #f5f5f5;
+  background: #222222;
 }
 
 .messages {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  padding-top: 24px;
   padding-bottom: 24px;
 }
 
@@ -50,6 +95,22 @@ input {
   border-radius: 16px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.message p {
+  margin: 0;
+}
+
+.message ul,
+.message ol {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.message code {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: #2a2a2a;
 }
 
 .message time {
@@ -71,13 +132,35 @@ input {
 
 .composer {
   display: flex;
+  position: fixed;
+  top: 50%;
+  left: 50%;
   gap: 10px;
   align-items: center;
-  width: 100%;
+  width: min(900px, calc(100% - 48px));
+  transform: translate(-50%, -50%);
   padding: 6px;
   border: 1px solid #363636;
   border-radius: 999px;
   background: #222222;
+  z-index: 10;
+}
+
+.has-messages .composer {
+  top: calc(100% - 76px);
+  transform: translateX(-50%);
+  animation: move-composer 500ms ease forwards;
+}
+
+@keyframes move-composer {
+  from {
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  to {
+    top: calc(100% - 76px);
+    transform: translateX(-50%);
+  }
 }
 
 .composer input {
@@ -108,7 +191,31 @@ input {
 }
 
 @media (max-width: 480px) {
+  .thread-control {
+    top: 12px;
+    right: 16px;
+  }
+
+  .composer {
+    width: calc(100% - 32px);
+  }
+
+  .has-messages .composer {
+    top: calc(100% - 68px);
+  }
+
+  @keyframes move-composer {
+    from {
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+    to {
+      top: calc(100% - 68px);
+      transform: translateX(-50%);
+    }
+  }
+
   .chat {
-    padding: 20px 16px 16px;
+    padding: 20px 16px 76px;
   }
 }
