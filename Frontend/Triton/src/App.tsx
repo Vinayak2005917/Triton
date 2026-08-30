@@ -7,6 +7,7 @@ type Message = {
   role: "agent" | "user";
   text: string;
   timestamp: string;
+  audioUrl?: string;
 };
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
+  const audioUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -39,6 +41,30 @@ function App() {
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [isRecording]);
+
+  useEffect(() => {
+    return () => {
+      audioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  async function generateSpeech(text: string, messageId: number) {
+    try {
+      const response = await fetch(
+        `http://localhost:8000/tts?text=${encodeURIComponent(text)}`,
+        { method: "POST" },
+      );
+      const audioUrl = URL.createObjectURL(await response.blob());
+      audioUrlsRef.current.push(audioUrl);
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === messageId ? { ...item, audioUrl } : item,
+        ),
+      );
+    } catch {
+      // Keep the text response available if speech generation fails.
+    }
+  }
 
   async function startRecording() {
     try {
@@ -133,11 +159,12 @@ function App() {
         { method: "POST" },
       );
       const data: { response: string } = await response.json();
+      const agentMessageId = Date.now();
 
       setMessages((current) => [
         ...current,
         {
-          id: Date.now(),
+          id: agentMessageId,
           role: "agent",
           text: data.response,
           timestamp: new Date().toLocaleTimeString([], {
@@ -146,6 +173,7 @@ function App() {
           }),
         },
       ]);
+      void generateSpeech(data.response, agentMessageId);
     } catch {
       setMessages((current) => [
         ...current,
@@ -192,6 +220,12 @@ function App() {
             aria-label="Message"
             value={message}
             onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
             placeholder="Message the agent..."
           />
         )}
@@ -202,6 +236,15 @@ function App() {
         {messages.map((item) => (
           <div className={`message ${item.role}`} key={item.id}>
             <Markdown>{item.text}</Markdown>
+            {item.audioUrl && (
+              <button
+                className="listen-button"
+                type="button"
+                onClick={() => void new Audio(item.audioUrl).play()}
+              >
+                Listen
+              </button>
+            )}
             <time dateTime={item.timestamp}>{item.timestamp}</time>
           </div>
         ))}

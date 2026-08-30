@@ -113,6 +113,18 @@ input {
   background: #2a2a2a;
 }
 
+.listen-button {
+  align-self: flex-start;
+  margin-top: 10px;
+  padding: 5px 10px;
+  border: 1px solid #444444;
+  border-radius: 999px;
+  color: #f5f5f5;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
 .message time {
   margin-top: 4px;
   color: #888888;
