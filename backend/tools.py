@@ -1,6 +1,7 @@
 
 import os
 import asyncio
+import serpapi
 import requests
 from ddgs import DDGS
 from utils import debug_print
@@ -10,8 +11,11 @@ from langchain_openai import ChatOpenAI
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+serpapi_client = serpapi.Client(api_key=os.getenv("SERP_API_KEY"))
 if not api_key:
     raise RuntimeError("OPENAI_API_KEY is not set")
+if not os.getenv("SERP_API_KEY"):
+    raise RuntimeError("SERP_API_KEY is not set")
 
 summary_model = ChatOpenAI(
     model="google/gemini-2.5-flash-lite",
@@ -56,3 +60,25 @@ async def batch_read_pages(pages: dict[str, str]):
             output.append(f"URL: {url}\n Relevant to: {query}\n\n {result}")
     debug_print(f"Batch reading completed. Returning summaries for {len(output)} webpages.")
     return "\n\n--- NEXT WEBPAGE ---\n\n".join(output)
+
+@tool("search_images", description="Search for images based on a query.")
+def search_images(query, num_images=5):
+    debug_print(f"Searching for {num_images} images with query: {query}")
+    results = serpapi_client.search({
+        "engine": "google_images",
+        "q": query,
+    })
+
+    images = results["images_results"][:num_images]
+
+    clean_outputs = []
+
+    for image in images:
+        clean_outputs.append({
+            "title": image["title"],
+            "link": image["original"],
+            "dimensions": f"{image['original_height']}x{image['original_width']}"
+        })
+
+    debug_print(f"Found {len(clean_outputs)} images for query: {query}")
+    return clean_outputs

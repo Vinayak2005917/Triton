@@ -10,10 +10,42 @@ type Message = {
   audioUrl?: string;
 };
 
+type AgentResponse = {
+  response: string;
+  code: string;
+};
+
+type Tab = {
+  id: number;
+  name: string;
+  threadId: string;
+  messages: Message[];
+  code: string;
+  message: string;
+};
+
+function prepareWorkspaceDocument(html: string) {
+  const workspaceStyles = `<style>
+    html, body { width: 100%; min-height: 100%; margin: 0; }
+    html { scrollbar-color: #181818 #181818 !important; scrollbar-width: thin !important; }
+    body { overflow-y: auto; scrollbar-color: #000 #181818 !important; scrollbar-width: thin !important; }
+    ::-webkit-scrollbar { width: 5px !important; height: 5px !important; background: #181818 !important; }
+    ::-webkit-scrollbar-track { background: #181818 !important; }
+    ::-webkit-scrollbar-thumb { background: #000 !important; border-radius: 8px !important; }
+    ::-webkit-scrollbar-button { display: none !important; width: 0 !important; height: 0 !important; background: #181818 !important; }
+  </style>`;
+
+  if (html.includes("</head>")) {
+    return html.replace("</head>", `${workspaceStyles}</head>`);
+  }
+
+  return `${workspaceStyles}${html}`;
+}
+
 function App() {
-  const [message, setMessage] = useState("");
-  const [threadId, setThreadId] = useState("Vinayak");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const nextTabId = useRef(2);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, name: "Triton Development", threadId: "Vinayak", messages: [], code: "", message: "" }]);
+  const [activeTabId, setActiveTabId] = useState(1);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [waveform, setWaveform] = useState<number[]>(Array(28).fill(8));
@@ -24,6 +56,30 @@ function App() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
   const audioUrlsRef = useRef<string[]>([]);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  const updateTab = (id: number, update: Partial<Tab>) => setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...update } : tab));
+  const updateActiveTab = (update: Partial<Tab>) => updateTab(activeTab.id, update);
+
+  function createTab() {
+    const id = nextTabId.current++;
+    setTabs((current) => [...current, { id, name: "New Agent", threadId: "Vinayak", messages: [], code: "", message: "" }]);
+    setActiveTabId(id);
+  }
+
+  function closeTab(id: number) {
+    if (tabs.length === 1) return;
+    const index = tabs.findIndex((tab) => tab.id === id);
+    const remaining = tabs.filter((tab) => tab.id !== id);
+    setTabs(remaining);
+    if (id === activeTabId) setActiveTabId(remaining[Math.max(0, index - 1)].id);
+  }
+
+  function renameTab(id: number) {
+    const tab = tabs.find((item) => item.id === id);
+    if (!tab) return;
+    const name = window.prompt("Rename tab", tab.name)?.trim();
+    if (name) updateTab(id, { name });
+  }
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -48,7 +104,7 @@ function App() {
     };
   }, []);
 
-  async function generateSpeech(text: string, messageId: number) {
+  async function generateSpeech(text: string, messageId: number, tabId: number) {
     try {
       const response = await fetch(
         `http://localhost:8000/tts?text=${encodeURIComponent(text)}`,
@@ -56,11 +112,7 @@ function App() {
       );
       const audioUrl = URL.createObjectURL(await response.blob());
       audioUrlsRef.current.push(audioUrl);
-      setMessages((current) =>
-        current.map((item) =>
-          item.id === messageId ? { ...item, audioUrl } : item,
-        ),
-      );
+      setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: tab.messages.map((item) => item.id === messageId ? { ...item, audioUrl } : item) } : tab));
     } catch {
       // Keep the text response available if speech generation fails.
     }
@@ -105,7 +157,7 @@ function App() {
           body: formData,
         })
           .then((response) => response.json())
-          .then((data: { text: string }) => setMessage(data.text))
+          .then((data: { text: string }) => updateActiveTab({ message: data.text }))
           .catch(() => undefined)
           .finally(() => setIsTranscribing(false));
 
@@ -135,13 +187,12 @@ function App() {
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = message.trim();
+    const tabId = activeTab.id;
+    const text = activeTab.message.trim();
 
     if (!text) return;
 
-    setMessages((current) => [
-      ...current,
-      {
+    updateTab(tabId, { message: "", messages: [...activeTab.messages, {
         id: Date.now(),
         role: "user",
         text,
@@ -149,35 +200,29 @@ function App() {
           hour: "2-digit",
           minute: "2-digit",
         }),
-      },
-    ]);
-    setMessage("");
+      }] });
 
     try {
       const response = await fetch(
-        `http://localhost:8000/ask?query=${encodeURIComponent(text)}&Thread_id=${encodeURIComponent(threadId.trim() || "Vinayak")}`,
+        `http://localhost:8000/ask?query=${encodeURIComponent(text)}&Thread_id=${encodeURIComponent(activeTab.threadId.trim() || "Vinayak")}`,
         { method: "POST" },
       );
-      const data: { response: string } = await response.json();
+      const data: AgentResponse = await response.json();
+      const responseText = data.response || "";
       const agentMessageId = Date.now();
 
-      setMessages((current) => [
-        ...current,
-        {
+      setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: [...tab.messages, {
           id: agentMessageId,
           role: "agent",
-          text: data.response,
+          text: responseText,
           timestamp: new Date().toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           }),
-        },
-      ]);
-      void generateSpeech(data.response, agentMessageId);
+        }] , code: data.code || "" } : tab));
+      void generateSpeech(responseText, agentMessageId, tabId);
     } catch {
-      setMessages((current) => [
-        ...current,
-        {
+      setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: [...tab.messages, {
           id: Date.now(),
           role: "agent",
           text: "Unable to reach the agent.",
@@ -185,19 +230,31 @@ function App() {
             hour: "2-digit",
             minute: "2-digit",
           }),
-        },
-      ]);
+        }] } : tab));
     }
   }
 
   return (
-    <main className={`chat ${messages.length ? "has-messages" : "empty"}`}>
+    <main className={`app-shell ${activeTab.messages.length ? "has-messages" : "empty"}`}>
+      <nav className="tab-bar" aria-label="Agent tabs">
+        {tabs.map((tab) => <div className={`tab ${tab.id === activeTab.id ? "active" : ""}`} key={tab.id}>
+          <button className="tab-name" onClick={() => setActiveTabId(tab.id)} onDoubleClick={() => renameTab(tab.id)} title="Double-click to rename">{tab.name}</button>
+          <button className="tab-close" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.name}`}>×</button>
+        </div>)}
+        <button className="new-tab" onClick={createTab} aria-label="Create new tab">+</button>
+      </nav>
+      <section className="card-workspace" aria-label="Agent workspace">
+        {tabs.map((tab) => tab.code ? <div className={`code-card ${tab.id === activeTab.id ? "visible" : "hidden"}`} key={tab.id}><iframe title={`${tab.name} workspace`} srcDoc={prepareWorkspaceDocument(tab.code)} sandbox="allow-scripts" /></div> : null)}
+        {!activeTab.code && <div className="workspace-placeholder">Your generated workspace will appear here.</div>}
+      </section>
+
+      <section className="chat-panel">
       <label className="thread-control">
         <span>Thread ID</span>
         <input
           aria-label="Thread ID"
-          value={threadId}
-          onChange={(event) => setThreadId(event.target.value)}
+          value={activeTab.threadId}
+          onChange={(event) => updateActiveTab({ threadId: event.target.value })}
         />
       </label>
 
@@ -218,8 +275,8 @@ function App() {
         ) : (
           <input
             aria-label="Message"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
+            value={activeTab.message}
+            onChange={(event) => updateActiveTab({ message: event.target.value })}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -233,7 +290,7 @@ function App() {
       </form>
 
       <section className="messages" aria-live="polite">
-        {messages.map((item) => (
+        {activeTab.messages.map((item) => (
           <div className={`message ${item.role}`} key={item.id}>
             <Markdown>{item.text}</Markdown>
             {item.audioUrl && (
@@ -249,6 +306,8 @@ function App() {
           </div>
         ))}
       </section>
+      </section>
+
     </main>
   );
 }

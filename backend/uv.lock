@@ -1375,6 +1375,18 @@ wheels = [
 ]
 
 [[package]]
+name = "serpapi"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ae/22/32899238a9a6b318c574ff156a9ee723cc6436114d4b5e8de027dab664c5/serpapi-1.1.0.tar.gz", hash = "sha256:aeba7f824e21512deeb6eb8b993e99a153eb1f48bdbbd166ffe2d2e947bf622b", size = 19514, upload-time = "2026-08-14T11:10:58.735Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/27/87a91965837671b31da3a402541a2996e9041af05b2696c6ad9cd7938556/serpapi-1.1.0-py3-none-any.whl", hash = "sha256:203b3b59c24efd3dce08ae0f3cbf335eb3a130871597cb5d35da9dad90c12a03", size = 12559, upload-time = "2026-08-14T11:10:57.482Z" },
+]
+
+[[package]]
 name = "setuptools"
 version = "84.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1521,6 +1533,7 @@ dependencies = [
     { name = "piper-tts" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "serpapi" },
     { name = "uvicorn" },
 ]
 
@@ -1535,6 +1548,7 @@ requires-dist = [
     { name = "piper-tts", specifier = ">=1.7.0" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "python-multipart", specifier = ">=0.0.32" },
+    { name = "serpapi", specifier = ">=1.1.0" },
     { name = "uvicorn", specifier = ">=0.52.4" },
 ]
 

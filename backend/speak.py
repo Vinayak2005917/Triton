@@ -14,7 +14,7 @@ def text_to_speech(text: str) -> str:
         [sys.executable, "-m", "piper", "-m", VOICE, "-f", output_path, "--", text],
         check=True,
     )
-    
+
     return output_path
 
 if __name__ == "__main__":

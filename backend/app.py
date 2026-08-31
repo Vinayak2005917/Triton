@@ -5,6 +5,7 @@ import tempfile
 from main_agent import ask_agent, current_model
 from transcribe import transcribe_audio
 import os
+import uvicorn
 from utils import debug_print
 from fastapi.responses import FileResponse
 from speak import text_to_speech
@@ -22,9 +23,8 @@ app.add_middleware(
 
 @app.post("/ask")
 async def ask(query: str, Thread_id: str):
-    #No DEBUG needed as it is already logged in main_agent.py
     response = await ask_agent(query, Thread_id)
-    return {"response": response}
+    return response.model_dump()
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
@@ -51,5 +51,7 @@ async def tts(text: str):
     return FileResponse(audio_path,media_type="audio/wav",filename="response.wav")
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except KeyboardInterrupt:
+        print("Shutting down the server...")
