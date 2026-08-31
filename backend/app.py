@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import tempfile
 from main_agent import ask_agent, current_model
+from graph import run_graph
 from transcribe import transcribe_audio
 import os
 import uvicorn
@@ -22,9 +23,11 @@ app.add_middleware(
 )
 
 @app.post("/ask")
-async def ask(query: str, Thread_id: str):
-    response = await ask_agent(query, Thread_id)
-    return response.model_dump()
+async def ask(agent_request: dict):
+    query = agent_request.get("query")
+    thread_id = agent_request.get("thread_id", "default")
+    workspace_code = agent_request.get("workspace_code", "")
+    return await run_graph(query, thread_id, workspace_code=workspace_code)
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):

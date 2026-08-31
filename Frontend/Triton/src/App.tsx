@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
 type Message = {
@@ -10,9 +11,15 @@ type Message = {
   audioUrl?: string;
 };
 
+type GraphMessage = {
+  role: string;
+  content?: string;
+};
+
 type AgentResponse = {
-  response: string;
-  code: string;
+  messages?: GraphMessage[];
+  workspace_code?: string;
+  suggested_next_prompts?: string[];
 };
 
 type Tab = {
@@ -23,6 +30,10 @@ type Tab = {
   code: string;
   message: string;
 };
+
+function createThreadId() {
+  return `Vinayak_${Math.floor(1000 + Math.random() * 9000)}`;
+}
 
 function prepareWorkspaceDocument(html: string) {
   const workspaceStyles = `<style>
@@ -43,11 +54,16 @@ function prepareWorkspaceDocument(html: string) {
 }
 
 function App() {
+  const appWindow = getCurrentWindow();
   const nextTabId = useRef(2);
-  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, name: "Triton Development", threadId: "Vinayak", messages: [], code: "", message: "" }]);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, name: "New Agent", threadId: createThreadId(), messages: [], code: "", message: "" }]);
   const [activeTabId, setActiveTabId] = useState(1);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [autoPlayTts, setAutoPlayTts] = useState(() => {
+    const savedPreference = window.localStorage.getItem("triton-auto-play-tts");
+    return savedPreference === null ? true : savedPreference === "true";
+  });
   const [waveform, setWaveform] = useState<number[]>(Array(28).fill(8));
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -62,7 +78,7 @@ function App() {
 
   function createTab() {
     const id = nextTabId.current++;
-    setTabs((current) => [...current, { id, name: "New Agent", threadId: "Vinayak", messages: [], code: "", message: "" }]);
+    setTabs((current) => [...current, { id, name: "New Agent", threadId: createThreadId(), messages: [], code: "", message: "" }]);
     setActiveTabId(id);
   }
 
@@ -83,6 +99,12 @@ function App() {
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
+      if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        createTab();
+        return;
+      }
+
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "d") {
         event.preventDefault();
 
@@ -112,10 +134,21 @@ function App() {
       );
       const audioUrl = URL.createObjectURL(await response.blob());
       audioUrlsRef.current.push(audioUrl);
+      if (autoPlayTts) {
+        void new Audio(audioUrl).play().catch(() => undefined);
+      }
       setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: tab.messages.map((item) => item.id === messageId ? { ...item, audioUrl } : item) } : tab));
     } catch {
       // Keep the text response available if speech generation fails.
     }
+  }
+
+  function toggleAutoPlayTts() {
+    setAutoPlayTts((enabled) => {
+      const nextValue = !enabled;
+      window.localStorage.setItem("triton-auto-play-tts", String(nextValue));
+      return nextValue;
+    });
   }
 
   async function startRecording() {
@@ -203,12 +236,20 @@ function App() {
       }] });
 
     try {
-      const response = await fetch(
-        `http://localhost:8000/ask?query=${encodeURIComponent(text)}&Thread_id=${encodeURIComponent(activeTab.threadId.trim() || "Vinayak")}`,
-        { method: "POST" },
-      );
+      const response = await fetch("http://localhost:8000/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: text,
+          thread_id: activeTab.threadId.trim() || "Vinayak",
+          workspace_code: activeTab.code,
+        }),
+      });
+      if (!response.ok) throw new Error(`Agent request failed (${response.status})`);
       const data: AgentResponse = await response.json();
-      const responseText = data.response || "";
+      const responseText = [...(data.messages ?? [])]
+        .reverse()
+        .find((message) => message.role === "assistant")?.content || "";
       const agentMessageId = Date.now();
 
       setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: [...tab.messages, {
@@ -219,8 +260,8 @@ function App() {
             hour: "2-digit",
             minute: "2-digit",
           }),
-        }] , code: data.code || "" } : tab));
-      void generateSpeech(responseText, agentMessageId, tabId);
+        }] , code: data.workspace_code ?? tab.code } : tab));
+      if (responseText) void generateSpeech(responseText, agentMessageId, tabId);
     } catch {
       setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: [...tab.messages, {
           id: Date.now(),
@@ -236,16 +277,36 @@ function App() {
 
   return (
     <main className={`app-shell ${activeTab.messages.length ? "has-messages" : "empty"}`}>
-      <nav className="tab-bar" aria-label="Agent tabs">
-        {tabs.map((tab) => <div className={`tab ${tab.id === activeTab.id ? "active" : ""}`} key={tab.id}>
-          <button className="tab-name" onClick={() => setActiveTabId(tab.id)} onDoubleClick={() => renameTab(tab.id)} title="Double-click to rename">{tab.name}</button>
-          <button className="tab-close" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.name}`}>×</button>
-        </div>)}
-        <button className="new-tab" onClick={createTab} aria-label="Create new tab">+</button>
-      </nav>
+      <header className="title-bar">
+        <nav className="tab-bar" aria-label="Agent tabs">
+          {tabs.map((tab) => <div
+            className={`tab ${tab.id === activeTab.id ? "active" : ""}`}
+            key={tab.id}
+            onMouseDown={(event) => {
+              if (event.button === 1) {
+                event.preventDefault();
+                closeTab(tab.id);
+              }
+            }}
+          >
+            <button className="tab-name" onClick={() => setActiveTabId(tab.id)} onDoubleClick={() => renameTab(tab.id)} title="Double-click to rename">{tab.name}</button>
+            <button className="tab-close" onClick={() => closeTab(tab.id)} aria-label={`Close ${tab.name}`}>×</button>
+          </div>)}
+          <button className="new-tab" onClick={createTab} aria-label="Create new tab">+</button>
+        </nav>
+        <div
+          className="title-bar-drag-region"
+          data-tauri-drag-region
+          onMouseDown={() => void appWindow.startDragging()}
+        />
+        <div className="window-controls" aria-label="Window controls">
+          <button type="button" onClick={() => void appWindow.minimize()} aria-label="Minimize">−</button>
+          <button type="button" onClick={() => void appWindow.toggleMaximize()} aria-label="Maximize">□</button>
+          <button type="button" className="close-window" onClick={() => void appWindow.close()} aria-label="Close">×</button>
+        </div>
+      </header>
       <section className="card-workspace" aria-label="Agent workspace">
         {tabs.map((tab) => tab.code ? <div className={`code-card ${tab.id === activeTab.id ? "visible" : "hidden"}`} key={tab.id}><iframe title={`${tab.name} workspace`} srcDoc={prepareWorkspaceDocument(tab.code)} sandbox="allow-scripts" /></div> : null)}
-        {!activeTab.code && <div className="workspace-placeholder">Your generated workspace will appear here.</div>}
       </section>
 
       <section className="chat-panel">
@@ -256,6 +317,18 @@ function App() {
           value={activeTab.threadId}
           onChange={(event) => updateActiveTab({ threadId: event.target.value })}
         />
+      </label>
+      <label className="tts-control">
+        <span>Auto-play TTS</span>
+        <button
+          className={`toggle ${autoPlayTts ? "enabled" : ""}`}
+          type="button"
+          role="switch"
+          aria-checked={autoPlayTts}
+          onClick={toggleAutoPlayTts}
+        >
+          <span className="toggle-thumb" />
+        </button>
       </label>
 
       <h1 className="welcome">Triton</h1>

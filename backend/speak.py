@@ -1,23 +1,24 @@
-import subprocess
+import os
 import tempfile
-import sys
+from openai import OpenAI
 
+client = OpenAI(
+    base_url="https://api.aicredits.in/v1",
+    api_key=os.getenv("AICREDITS_API_KEY"),
+)
 
-VOICE = "en_US-lessac-medium"
+MODEL = "openai/tts-1"
+VOICE = "nova"
 
 
 def text_to_speech(text: str) -> str:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp:
         output_path = temp.name
-
-    subprocess.run(
-        [sys.executable, "-m", "piper", "-m", VOICE, "-f", output_path, "--", text],
-        check=True,
-    )
-
+    response = client.audio.speech.create(model=MODEL,voice=VOICE,input=text,response_format="mp3",)
+    response.write_to_file(output_path)
     return output_path
 
+
 if __name__ == "__main__":
-    text = "Hello, this is a test of the text-to-speech functionality."
-    audio_path = text_to_speech(text)
-    print(f"Audio file generated at: {audio_path}")
+    audio_file_path = text_to_speech("Hello, this is a test of Triton's text to speech system.")
+    print(f"Audio file generated at: {audio_file_path}")
