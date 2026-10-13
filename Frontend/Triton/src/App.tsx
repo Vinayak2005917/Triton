@@ -12,14 +12,16 @@ type Message = {
 };
 
 type GraphMessage = {
-  role: string;
-  content?: string;
+  role?: string;
+  type?: string;
+  content?: string | Array<{ type?: string; text?: string }>;
 };
 
 type AgentResponse = {
   messages?: GraphMessage[];
   workspace_code?: string;
   suggested_next_prompts?: string[];
+  structured_response?: { response?: string; suggested_next_prompts?: string[] };
 };
 
 type Tab = {
@@ -29,6 +31,7 @@ type Tab = {
   messages: Message[];
   code: string;
   message: string;
+  suggestedPrompts: string[];
 };
 
 function createThreadId() {
@@ -56,10 +59,11 @@ function prepareWorkspaceDocument(html: string) {
 function App() {
   const appWindow = getCurrentWindow();
   const nextTabId = useRef(2);
-  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, name: "New Agent", threadId: createThreadId(), messages: [], code: "", message: "" }]);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, name: "New Agent", threadId: createThreadId(), messages: [], code: "", message: "", suggestedPrompts: [] }]);
   const [activeTabId, setActiveTabId] = useState(1);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [autoPlayTts, setAutoPlayTts] = useState(() => {
     const savedPreference = window.localStorage.getItem("triton-auto-play-tts");
     return savedPreference === null ? true : savedPreference === "true";
@@ -78,7 +82,7 @@ function App() {
 
   function createTab() {
     const id = nextTabId.current++;
-    setTabs((current) => [...current, { id, name: "New Agent", threadId: createThreadId(), messages: [], code: "", message: "" }]);
+    setTabs((current) => [...current, { id, name: "New Agent", threadId: createThreadId(), messages: [], code: "", message: "", suggestedPrompts: [] }]);
     setActiveTabId(id);
   }
 
@@ -225,7 +229,8 @@ function App() {
 
     if (!text) return;
 
-    updateTab(tabId, { message: "", messages: [...activeTab.messages, {
+    setIsSending(true);
+    updateTab(tabId, { message: "", suggestedPrompts: [], messages: [...activeTab.messages, {
         id: Date.now(),
         role: "user",
         text,
@@ -247,21 +252,27 @@ function App() {
       });
       if (!response.ok) throw new Error(`Agent request failed (${response.status})`);
       const data: AgentResponse = await response.json();
-      const responseText = [...(data.messages ?? [])]
+      const responseMessage = [...(data.messages ?? [])]
         .reverse()
-        .find((message) => message.role === "assistant")?.content || "";
+        .find((message) => message.role === "assistant" || message.role === "ai" || message.type === "ai");
+      const responseText = typeof responseMessage?.content === "string"
+        ? responseMessage.content
+        : responseMessage?.content?.map((part) => part.text ?? "").join("") ?? "";
+      const structured = data.structured_response;
+      const finalText = responseText || structured?.response || "The agent returned no visible response. Check the backend terminal for details.";
+      const suggestedPrompts = data.suggested_next_prompts ?? structured?.suggested_next_prompts ?? [];
       const agentMessageId = Date.now();
 
       setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: [...tab.messages, {
           id: agentMessageId,
           role: "agent",
-          text: responseText,
+          text: finalText,
           timestamp: new Date().toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           }),
-        }] , code: data.workspace_code ?? tab.code } : tab));
-      if (responseText) void generateSpeech(responseText, agentMessageId, tabId);
+        }] , code: data.workspace_code ?? tab.code, suggestedPrompts } : tab));
+      if (responseText) void generateSpeech(finalText, agentMessageId, tabId);
     } catch {
       setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, messages: [...tab.messages, {
           id: Date.now(),
@@ -272,6 +283,8 @@ function App() {
             minute: "2-digit",
           }),
         }] } : tab));
+    } finally {
+      setIsSending(false);
     }
   }
 
@@ -333,6 +346,16 @@ function App() {
 
       <h1 className="welcome">Triton</h1>
 
+      {activeTab.suggestedPrompts.length > 0 && (
+        <div className="suggested-prompts" aria-label="Suggested prompts">
+          {activeTab.suggestedPrompts.map((prompt) => (
+            <button key={prompt} type="button" onClick={() => updateActiveTab({ message: prompt })}>
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
+
       <form className="composer" onSubmit={sendMessage}>
         {isRecording ? (
           <div className="waveform" aria-label="Recording audio">
@@ -359,7 +382,7 @@ function App() {
             placeholder="Message the agent..."
           />
         )}
-        <button type="submit" disabled={isTranscribing}>Send</button>
+        <button type="submit" disabled={isTranscribing || isSending}>{isSending ? "Thinking…" : "Send"}</button>
       </form>
 
       <section className="messages" aria-live="polite">
@@ -378,6 +401,13 @@ function App() {
             <time dateTime={item.timestamp}>{item.timestamp}</time>
           </div>
         ))}
+        {isSending && (
+          <div className="message agent typing-indicator" aria-label="Agent is responding">
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
       </section>
       </section>
 

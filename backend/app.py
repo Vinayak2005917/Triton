@@ -46,12 +46,9 @@ async def transcribe(file: UploadFile = File(...)):
 
 @app.post("/tts")
 async def tts(text: str):
-    debug_print(f"Received text for TTS, now starting pre processing")
-    text = current_model.invoke(f"Make the following text TTS ready, remove all the markdown elements {text}").content
-    debug_print(f"TTS pre processing completed, Now starting TTS generation")
-    audio_path = text_to_speech(text)
-    debug_print(f"TTS completed, Now sending back to frontend")
-    return FileResponse(audio_path,media_type="audio/wav",filename="response.wav")
+    debug_print(f"Received text for TTS: {text[:10]}...")
+    text_to_speech(text)
+    return {"message": "Text-to-speech conversion completed."}
 
 if __name__ == "__main__":
     try:

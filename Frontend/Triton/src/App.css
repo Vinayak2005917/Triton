@@ -352,6 +352,33 @@ input {
   background: #2a2a2a;
 }
 
+.typing-indicator {
+  display: flex;
+  width: 58px;
+  min-height: 38px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #aaa;
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 160ms; }
+.typing-indicator span:nth-child(3) { animation-delay: 320ms; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+
 .composer {
   display: flex;
   position: fixed;
@@ -381,6 +408,38 @@ input {
   left: 50%;
   width: min(500px, calc(100% - 32px));
   transform: translateX(-50%);
+}
+
+.suggested-prompts {
+  display: flex;
+  position: absolute;
+  right: 50%;
+  bottom: 82px;
+  z-index: 9;
+  width: min(620px, calc(100% - 32px));
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  transform: translateX(50%);
+}
+
+.suggested-prompts button {
+  max-width: 100%;
+  padding: 8px 13px;
+  border: 1px solid #3d3d3d;
+  border-radius: 999px;
+  color: #d8d8d8;
+  background: #222222;
+  cursor: pointer;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggested-prompts button:hover {
+  border-color: #777;
+  color: #fff;
 }
 
 .card-workspace {
@@ -534,6 +593,10 @@ input {
 
   .has-messages .composer {
     top: calc(100% - 68px);
+  }
+
+  .suggested-prompts {
+    bottom: 76px;
   }
 
   @keyframes move-composer {

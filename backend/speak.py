@@ -1,24 +1,24 @@
+from elevenlabs.client import ElevenLabs
+from elevenlabs.play import play
+from dotenv import load_dotenv
+from tools import debug_print
 import os
-import tempfile
-from openai import OpenAI
 
-client = OpenAI(
-    base_url="https://api.aicredits.in/v1",
-    api_key=os.getenv("AICREDITS_API_KEY"),
-)
+load_dotenv()
 
-MODEL = "openai/tts-1"
-VOICE = "nova"
+api_key = os.getenv("ELEVENLABS_API_KEY")
+client = ElevenLabs(api_key=api_key)
 
-
-def text_to_speech(text: str) -> str:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp:
-        output_path = temp.name
-    response = client.audio.speech.create(model=MODEL,voice=VOICE,input=text,response_format="mp3",)
-    response.write_to_file(output_path)
-    return output_path
-
+def text_to_speech(text):
+    debug_print(f"sending the request")
+    audio = client.text_to_speech.convert(
+        text=text,
+        voice_id="JBFqnCBsd6RMkjVDRZzb",
+        model_id="eleven_flash_v2_5",
+        output_format="mp3_44100_128",
+    )
+    debug_print(f"received the response")
+    play(audio)
 
 if __name__ == "__main__":
-    audio_file_path = text_to_speech("Hello, this is a test of Triton's text to speech system.")
-    print(f"Audio file generated at: {audio_file_path}")
+    text_to_speech("Hello, this is a test of the ElevenLabs text-to-speech functionality.")
