@@ -1,11 +1,10 @@
 from faster_whisper import WhisperModel
-import asyncio
-import os
 
+# Use CPU inference so transcription works without CUDA runtime libraries.
 model = WhisperModel(
     "small",
     device="cpu",
-    compute_type="int8"
+    compute_type="int8",
 )
 
 def transcribe_audio(file_path: str) -> str:

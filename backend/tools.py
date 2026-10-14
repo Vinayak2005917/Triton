@@ -12,6 +12,7 @@ from googleapiclient.discovery import build
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote
+from websocket import send_tool_update
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
@@ -40,6 +41,7 @@ async def read_webpage(url: str, query: str):
 
 @tool("Get_relevant_webpages", description="Search the web for relevant webpages.")
 def Get_relevant_webpages(query: str):
+    send_tool_update("Searching the web", "Get_relevant_webpages")
     try:
         debug_print(f"Searching the web for: {query}")
         results = DDGS().text(query, max_results=5)
@@ -53,6 +55,7 @@ def Get_relevant_webpages(query: str):
 
 @tool("batch_read_pages", description="Read a batch webpages of {'url':'query', 'url':'query'}, never more than 5")
 async def batch_read_pages(pages: dict[str, str]):
+    send_tool_update("Reading selected webpages", "batch_read_pages")
     try:
         pages = dict(list(pages.items())[:5])
 
@@ -78,6 +81,7 @@ async def batch_read_pages(pages: dict[str, str]):
 
 @tool("search_images", description="Search for images based on a query.")
 def search_images(query, num_images=5):
+    send_tool_update(f"Searching for {num_images} images with query: {query}", "search_images")
     debug_print(f"Searching for {num_images} images with query: {query}")
     try:
         results = serpapi_client.search({
@@ -104,6 +108,7 @@ def search_images(query, num_images=5):
 #it should give video id, title, description, channel name, view count, like count, duration, and thumbnail link
 @tool("Search_youtube_videos", description="Search for YouTube videos based on a query.")
 def search_youtube_videos(query, max_results=10):
+    send_tool_update("Searching YouTube", "Search_youtube_videos")
     try:
         debug_print(f"Searching for YouTube videos with query: {query}")
         request = youtube.search().list(
@@ -144,6 +149,7 @@ def search_youtube_videos(query, max_results=10):
 
 @tool("check_weather", description="Check the weather for a given location.")
 def check_weather(location):
+    send_tool_update("Checking current weather", "check_weather")
     try:
         # 1. Convert location → latitude/longitude
         geo_response = requests.get(
@@ -206,6 +212,7 @@ def check_weather(location):
 
 @tool("get_wiki_page", description="Get the Wikipedia page for a given topic. Caution : The wiki page can be very long.")
 def get_wiki_page(topic, query):
+    send_tool_update("Reading Wikipedia", "get_wiki_page")
     try:
         debug_print(f"Fetching Wikipedia page for topic: {topic} with query: {query}")
         search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={quote(topic)}&format=json"

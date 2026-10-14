@@ -1,15 +1,21 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import tempfile
-from main_agent import ask_agent, current_model
 from graph import run_graph
 from transcribe import transcribe_audio
 import os
 import uvicorn
 from utils import debug_print
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from speak import text_to_speech
+from dotenv import load_dotenv
+from websocket import set_active_connection, reset_active_connection
+import uuid
+
+load_dotenv()
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise RuntimeError("OPENAI_API_KEY is not set")
 
 app = FastAPI()
 
@@ -22,12 +28,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/ask")
-async def ask(agent_request: dict):
-    query = agent_request.get("query")
-    thread_id = agent_request.get("thread_id", "default")
-    workspace_code = agent_request.get("workspace_code", "")
-    return await run_graph(query, thread_id, workspace_code=workspace_code)
+@app.websocket("/ws")
+async def agent_socket(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            request = await websocket.receive_json()
+            request_id = str(request.get("request_id") or uuid.uuid4())
+            query = str(request.get("query") or "").strip()
+            if not query:
+                await websocket.send_json({"type": "error", "request_id": request_id, "message": "Prompt cannot be empty."})
+                continue
+
+            tokens = set_active_connection(websocket, request_id)
+            try:
+                await run_graph(
+                    query=query,
+                    thread_id=str(request.get("thread_id") or "default"),
+                    workspace_code=str(request.get("workspace_code") or ""),
+                    request_id=request_id,
+                    websocket=websocket,
+                )
+                await websocket.send_json({"type": "done", "request_id": request_id})
+            except Exception as error:
+                debug_print(f"WebSocket agent request failed: {error}")
+                await websocket.send_json({"type": "error", "request_id": request_id, "message": "The agent could not complete this request."})
+            finally:
+                reset_active_connection(tokens)
+    except WebSocketDisconnect:
+        debug_print("Agent WebSocket disconnected")
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
@@ -43,12 +72,15 @@ async def transcribe(file: UploadFile = File(...)):
     os.remove(temp_path)
     return {"text": text}
 
-
 @app.post("/tts")
 async def tts(text: str):
     debug_print(f"Received text for TTS: {text[:10]}...")
-    text_to_speech(text)
-    return {"message": "Text-to-speech conversion completed."}
+    audio_bytes, filename = text_to_speech(text)
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 if __name__ == "__main__":
     try:
