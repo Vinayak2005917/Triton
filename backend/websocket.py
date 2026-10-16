@@ -5,21 +5,24 @@ from fastapi import WebSocket
 
 _active_connection: contextvars.ContextVar[WebSocket | None] = contextvars.ContextVar("active_connection", default=None)
 _active_request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("active_request_id", default=None)
+_active_thread_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("active_thread_id", default=None)
 _active_loop: contextvars.ContextVar[asyncio.AbstractEventLoop | None] = contextvars.ContextVar("active_loop", default=None)
 
 
-def set_active_connection(websocket: WebSocket, request_id: str):
+def set_active_connection(websocket: WebSocket, request_id: str, thread_id: str | None = None):
     return (
         _active_connection.set(websocket),
         _active_request_id.set(request_id),
+        _active_thread_id.set(thread_id),
         _active_loop.set(asyncio.get_running_loop()),
     )
 
 
 def reset_active_connection(tokens):
-    connection_token, request_token, loop_token = tokens
+    connection_token, request_token, thread_token, loop_token = tokens
     _active_connection.reset(connection_token)
     _active_request_id.reset(request_token)
+    _active_thread_id.reset(thread_token)
     _active_loop.reset(loop_token)
 
 
@@ -51,9 +54,14 @@ def _schedule_active_event(event: dict, wait: bool = False):
 
 
 def send_tool_update(contents: str, tool_name: str = "tool", request_id: str | None = None):
+    active_request_id = request_id or _active_request_id.get()
+    thread_id = _active_thread_id.get()
+    if thread_id and active_request_id:
+        from storage import store
+        store.save_tool_update(thread_id, active_request_id, f"{tool_name}: {contents}")
     _schedule_active_event({
         "type": "tool_update",
-        "request_id": request_id or _active_request_id.get(),
+        "request_id": active_request_id,
         "tool": tool_name,
         "content": contents,
     }, wait=True)

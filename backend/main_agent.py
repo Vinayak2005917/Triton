@@ -3,7 +3,7 @@ from utils import debug_print
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
-from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
 import time
 from langchain.tools import tool
@@ -12,7 +12,20 @@ from websocket import send_tool_update, send_workspace_update
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
-memory = InMemorySaver()
+memory = None
+
+
+def set_checkpointer(checkpointer):
+    global memory
+    memory = checkpointer
+
+
+async def delete_request_checkpoint(thread_id, request_id):
+    if memory is not None:
+        try:
+            await memory.adelete_thread(f"{thread_id}:{request_id}")
+        except Exception as error:
+            debug_print(f"Could not remove interrupted checkpoint for {thread_id}: {error}")
 
 
 current_model = ChatOpenAI(
@@ -34,7 +47,7 @@ from tools import search_images, search_youtube_videos, check_weather, get_wiki_
 from search import multi_search
 
 
-async def ask_agent(query, workspace_code, thread_id, request_id=None):
+async def ask_agent(query, workspace_code, thread_id, request_id=None, conversation_history=None):
     debug_print(f"Received query: {query} for thread_id: {thread_id}")
 
     workspace = {"html": workspace_code}
@@ -44,7 +57,9 @@ async def ask_agent(query, workspace_code, thread_id, request_id=None):
         debug_print(f"Workspace changes='{changes}'")
         send_tool_update(f"Workspace changes='{changes}'", tool_name="edit_workspace", request_id=request_id)
         workspace["html"] = diff_applier(workspace["html"], [{"search": search, "replace": replace}])
-        send_workspace_update(workspace["html"], request_id=request_id)
+        from storage import store
+        if store.save_workspace_update(thread_id, request_id or "", workspace["html"]):
+            send_workspace_update(workspace["html"], request_id=request_id)
         return f"Workspace updated. Current workspace HTML:\n{workspace['html']}"
 
     agent = create_agent(
@@ -57,9 +72,21 @@ async def ask_agent(query, workspace_code, thread_id, request_id=None):
 
     enriched_query = f"{query}\n\nCurrent date and time: {time.strftime('%Y-%m-%d %H:%M:%S')}\nCurrent workspace HTML (use edit_workspace to modify it):\n{workspace['html']}"
 
+    messages = []
+    for item in conversation_history or []:
+        content = str(item.get("text") or "").strip()
+        if not content:
+            continue
+        if item.get("role") == "user":
+            messages.append(HumanMessage(content=content))
+        elif item.get("role") == "agent":
+            messages.append(AIMessage(content=content))
+    messages.append(HumanMessage(content=enriched_query))
+
+    request_checkpoint_id = f"{thread_id}:{request_id or 'request'}"
     result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": enriched_query}]},
-        config={"configurable": {"thread_id": thread_id}},
+        {"messages": messages},
+        config={"configurable": {"thread_id": request_checkpoint_id}},
     )
     debug_print(f"Agent response for thread_id {thread_id} with response {result['structured_response'].response}")
 

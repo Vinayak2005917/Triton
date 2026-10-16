@@ -5,6 +5,7 @@ from langgraph.graph.message import add_messages
 
 from main_agent import ask_agent, current_model
 from pydantic import BaseModel
+from storage import store
 
 
 class TritonState(TypedDict):
@@ -17,6 +18,7 @@ class TritonState(TypedDict):
     response: str
     suggested_next_prompts: list[str]
     websocket: object
+    conversation_history: list[dict]
 
 
 class SuggestionsModel(BaseModel):
@@ -38,6 +40,7 @@ async def tab_name_node(state: TritonState) -> TritonState:
         name = str(content)
     name = " ".join(name.strip().strip("`\"' ").split()[:4])
     state["tab_name"] = name
+    store.save_tab_name(state["thread_id"], state["request_id"], name)
     await state["websocket"].send_json({"type": "tab_name", "request_id": state["request_id"], "name": name})
     return state
 
@@ -46,10 +49,12 @@ async def research_edit_node(state: TritonState) -> TritonState:
     response, updated_workspace = await ask_agent(
         state["query"], state["workspace_code"], state["thread_id"],
         request_id=state["request_id"],
+        conversation_history=state.get("conversation_history"),
     )
     state["response"] = response.response
     state["workspace_code"] = updated_workspace
     state["messages"].append({"role": "assistant", "content": response.response})
+    store.save_response(state["thread_id"], state["request_id"], response.response, updated_workspace)
     await state["websocket"].send_json({
         "type": "response",
         "request_id": state["request_id"],
@@ -68,6 +73,7 @@ async def suggestions_node(state: TritonState) -> TritonState:
     )
     result = await current_model.with_structured_output(SuggestionsModel).ainvoke(prompt)
     state["suggested_next_prompts"] = result.suggested_next_prompts[:3]
+    store.save_suggested_prompts(state["thread_id"], state["request_id"], state["suggested_next_prompts"])
     await state["websocket"].send_json({
         "type": "suggested_prompts",
         "request_id": state["request_id"],
@@ -88,7 +94,14 @@ builder.add_edge("suggestions", END)
 graph = builder.compile()
 
 
-async def run_graph(query: str, thread_id: str, workspace_code: str, request_id: str, websocket) -> TritonState:
+async def run_graph(
+    query: str,
+    thread_id: str,
+    workspace_code: str,
+    request_id: str,
+    websocket,
+    conversation_history: list[dict] | None = None,
+) -> TritonState:
     if not workspace_code:
         raise ValueError("workspace_code must be provided by the frontend")
 
@@ -102,5 +115,6 @@ async def run_graph(query: str, thread_id: str, workspace_code: str, request_id:
         "response": "",
         "suggested_next_prompts": [],
         "websocket": websocket,
+        "conversation_history": conversation_history or [],
     }
     return await graph.ainvoke(initial_state)

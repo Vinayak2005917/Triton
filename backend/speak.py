@@ -6,20 +6,53 @@ from pathlib import Path
 import hashlib
 
 load_dotenv()
+key1 = os.getenv("ELEVENLABS_API_KEY")
+key2 = os.getenv("ELEVENLABS_API_KEY2")
 
-api_key = os.getenv("ELEVENLABS_API_KEY")
-client = ElevenLabs(api_key=api_key)
+
+def _is_insufficient_balance_error(error):
+    body = getattr(error, "body", None)
+    if not isinstance(body, dict):
+        return False
+
+    detail = body.get("detail", body)
+    if not isinstance(detail, dict):
+        return False
+
+    code = str(detail.get("code", "")).lower()
+    message = str(detail.get("message", "")).lower()
+    if code in {"insufficient_balance", "insufficient_credits"}:
+        return True
+
+    return (
+        code == "quota_exceeded"
+        and "credit" in message
+        and ("required" in message or "insufficient" in message or "not enough" in message)
+    )
 
 def text_to_speech(text):
     try:
-        debug_print("Sending the text-to-speech request")
-        audio = client.text_to_speech.convert(
-            text=text,
-            voice_id="JBFqnCBsd6RMkjVDRZzb",
-            model_id="eleven_flash_v2_5",
-            output_format="mp3_44100_128",
-        )
-        audio_bytes = b"".join(audio)
+        api_keys = [api_key for api_key in (key1, key2) if api_key]
+        if not api_keys:
+            raise RuntimeError("No ElevenLabs API key is configured.")
+
+        for index, api_key in enumerate(api_keys):
+            try:
+                debug_print("Sending the text-to-speech request")
+                audio = ElevenLabs(api_key=api_key).text_to_speech.convert(
+                    text=text,
+                    voice_id="nPczCjzI2devNBz1zQrb",
+                    model_id="eleven_flash_v2_5",
+                    output_format="mp3_44100_128",
+                )
+                audio_bytes = b"".join(audio)
+                break
+            except Exception as error:
+                if index + 1 < len(api_keys) and _is_insufficient_balance_error(error):
+                    debug_print("Insufficient ElevenLabs balance; retrying with the second API key")
+                    continue
+                raise
+
         if not audio_bytes:
             raise RuntimeError("The text-to-speech service returned empty audio.")
 
