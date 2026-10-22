@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Triton — Dare Mighty Things</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            triton: {
+              bg: '#181818',
+              titlebar: '#1f1f1f',
+              hexBase: '#242424',
+              hexStroke: '#333333',
+              lightGray: '#ffffff',
+              eyeGray: '#ededed',
+              mutedGray: '#8a8a8a',
+              pillBg: '#212121',
+              pillBorder: '#333333',
+              pillFocus: '#525252',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #181818;
+      color: #ffffff;
+      overflow: hidden;
+    }
+
+    /* Allow text selection inside the prompt input */
+    #prompt-input {
+      user-select: text;
+    }
+
+    /* Analytical Thinking Eye Scan */
+    @keyframes thinkingScan {
+      0%, 100% { transform: translateX(0px); }
+      25% { transform: translateX(-9px); }
+      75% { transform: translateX(9px); }
+    }
+    .thinking-scan {
+      animation: thinkingScan 1.4s ease-in-out infinite;
+    }
+
+    /* Subtle Flat Ring for Audio Mode */
+    @keyframes voicePulse {
+      0% {
+        transform: scale(0.95);
+        opacity: 0.5;
+      }
+      100% {
+        transform: scale(1.25);
+        opacity: 0;
+      }
+    }
+    .voice-ring {
+      animation: voicePulse 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+    }
+
+    /* Custom Range Input for Minimal Popover */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: transparent;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      cursor: pointer;
+      background: #2e2e2e;
+      border-radius: 9999px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -4px;
+    }
+  </style>
+</head>
+<body class="relative w-screen h-screen flex flex-col justify-between antialiased bg-[#181818]">
+
+  <!-- ===================================================================== -->
+  <!-- 1. FULL-SCREEN HEXAGONAL GRID & VIDEO PIXEL-ART CANVAS BACKGROUND     -->
+  <!-- ===================================================================== -->
+  <canvas id="hex-canvas" class="fixed inset-0 w-full h-full pointer-events-none z-0"></canvas>
+
+  <!-- Hidden Offscreen Media Elements for Video/Image Hex-Pixel Sampling -->
+  <video id="source-video" class="hidden" loop muted playsinline crossorigin="anonymous"></video>
+  <img id="source-image" class="hidden" alt="Hex source" />
+  <input id="media-upload-input" type="file" accept="video/*,image/*" class="hidden" />
+
+  <!-- ===================================================================== -->
+  <!-- 2. PROTOTYPE TOP WINDOW TITLEBAR & TAB BAR                            -->
+  <!-- ===================================================================== -->
+  <header class="relative z-20 w-full h-9 bg-[#1f1f1f] flex items-center justify-between px-2 select-none border-b border-[#141414]">
+    <!-- Left: Active Tab & New Tab Button -->
+    <div class="flex items-center h-full">
+      <div class="h-full bg-[#181818] px-4 flex items-center justify-between min-w-[180px] sm:min-w-[210px] text-xs font-semibold text-white">
+        <span class="truncate">New Agent</span>
+        <button type="button" id="reset-tab-btn" class="ml-4 text-[#9a9a9a] hover:text-white transition text-sm leading-none" title="Reset session">&times;</button>
+      </div>
+      <button type="button" id="new-tab-btn" class="w-8 h-8 ml-1 flex items-center justify-center text-[#9a9a9a] hover:text-white transition text-base leading-none" title="New Agent Tab">+</button>
+    </div>
+
+    <!-- Right: History, Settings Gear (opens Hex Controls), Window Controls -->
+    <div class="flex items-center space-x-4 pr-2 text-xs text-[#b0b0b0]">
+      <button type="button" id="history-btn" class="hover:text-white transition">History</button>
+      
+      <!-- Gear Icon toggles Hex Grid / Synth Video Settings -->
+      <button type="button" id="header-gear-btn" class="hover:text-white transition p-1" title="Hexagon Background Settings">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+
+      <!-- Window Controls -->
+      <div class="flex items-center space-x-3.5 pl-1 text-[#9a9a9a]">
+        <span class="hover:text-white cursor-default text-[11px]">&#8212;</span>
+        <span class="hover:text-white cursor-default text-[11px]">&#9633;</span>
+        <span class="hover:text-white cursor-default text-sm leading-none">&times;</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- 3. CENTERED HERO INTERFACE (FLAT MASCOT + "triton." + PILL INPUT)     -->
+  <!-- ===================================================================== -->
+  <main class="relative z-10 flex flex-col items-center justify-center w-full px-4 max-w-3xl mx-auto my-auto pointer-events-none">
+    
+    <!-- Brand Lockup Matching Prototype Layout: Large Mascot on Left, "triton." & "Dare Mighty Things" Stacked on Right -->
+    <div id="hero-lockup" class="flex items-center justify-center space-x-6 sm:space-x-8 pointer-events-auto cursor-pointer" title="Click to blink">
+      
+      <!-- Large Flat 2D Triton Mascot Logo (Concept 02 - 128px to 144px) -->
+      <div id="mascot-container" class="relative w-28 h-28 sm:w-36 sm:h-36 flex items-center justify-center flex-shrink-0">
+        <!-- Flat Pulse Ring (Visible when Audio Mode is active) -->
+        <div id="mascot-voice-ring" class="absolute inset-1 rounded-2xl border-2 border-white/40 opacity-0 pointer-events-none"></div>
+
+        <svg id="triton-mascot-svg" viewBox="0 0 200 200" class="w-full h-full overflow-visible">
+          <!-- Flat Head Group -->
+          <g id="mascot-head-group" style="transform-origin: 100px 100px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);">
+            
+            <!-- Flat Rounded Pointy-Top Hexagon (Concept 02 Matte Dark Gray) -->
+            <path id="mascot-hex-body"
+                  fill="#252525"
+                  stroke="#363636"
+                  stroke-width="2" />
+
+            <!-- Autonomous Eye Gaze Group (No Mouse Tracking) -->
+            <g id="mascot-eyes-gaze" style="transform: translate(0px, 0px);">
+              
+              <!-- Left Broad Capsule Eye -->
+              <g id="left-eye-wrapper" style="transform-origin: 79px 100px; transition: transform 0.08s ease-out;">
+                <rect id="left-eye-pill"
+                      x="67" y="68"
+                      width="24" height="64"
+                      rx="12"
+                      fill="#ffffff" />
+                <path id="left-eye-arch"
+                      d="M 67 105 Q 79 82 91 105"
+                      fill="none"
+                      stroke="#ffffff"
+                      stroke-width="9"
+                      stroke-linecap="round"
+                      class="opacity-0 transition-opacity duration-150" />
+              </g>
+
+              <!-- Right Broad Capsule Eye -->
+              <g id="right-eye-wrapper" style="transform-origin: 121px 100px; transition: transform 0.08s ease-out;">
+                <rect id="right-eye-pill"
+                      x="109" y="68"
+                      width="24" height="64"
+                      rx="12"
+                      fill="#ffffff" />
+                <path id="right-eye-arch"
+                      d="M 109 105 Q 121 82 133 105"
+                      fill="none"
+                      stroke="#ffffff"
+                      stroke-width="9"
+                      stroke-linecap="round"
+                      class="opacity-0 transition-opacity duration-150" />
+              </g>
+
+            </g>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Right Stacked Typography: "triton." and "Dare Mighty Things" -->
+      <div class="flex flex-col items-start justify-center select-none">
+        <h1 class="text-6xl sm:text-[84px] font-bold tracking-[-0.03em] text-white leading-none">
+          triton.
+        </h1>
+        <p class="mt-2 sm:mt-2.5 text-lg sm:text-[23px] font-semibold tracking-[-0.01em] text-[#8a8a8a] leading-snug pl-0.5">
+          Dare Mighty Things
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Prototype Flat Pill-Shaped Input Bar -->
+    <form id="prompt-form" class="mt-8 sm:mt-9 w-[92vw] max-w-[680px] pointer-events-auto relative">
+      <div id="pill-bar-container"
+           class="w-full h-[52px] sm:h-[54px] flex items-center bg-[#212121] border border-[#333333] focus-within:border-[#4d4d4d] rounded-full pl-6 pr-2 transition-colors duration-150">
+        
+        <!-- Prompt Text Input -->
+        <input id="prompt-input"
+               type="text"
+               autocomplete="off"
+               spellcheck="false"
+               placeholder="Message the agent..."
+               class="w-full bg-transparent text-[15px] text-white placeholder-[#787878] focus:outline-none pr-3 font-normal" />
+
+        <!-- Right Action Controls: Minimal Mic Icon & White "Send" Pill Button -->
+        <div class="flex items-center space-x-2.5 flex-shrink-0">
+          
+          <!-- Voice / Audio Mode Toggle Button -->
+          <button type="button"
+                  id="voice-mic-btn"
+                  title="Toggle audio mode (Ctrl+Shift+D)"
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-[#9a9a9a] hover:text-white transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
+            </svg>
+          </button>
+
+          <!-- Solid White "Send" Pill Button -->
+          <button type="submit"
+                  id="submit-prompt-btn"
+                  class="h-9 px-5 rounded-full bg-white text-[#141414] hover:bg-[#e8e8e8] text-[14px] font-semibold flex items-center justify-center transition active:scale-95">
+            Send
+          </button>
+
+        </div>
+      </div>
+    </form>
+
+    <!-- Minimal Inline Agent Status Feedback -->
+    <div id="agent-response-pill"
+         class="mt-4 px-4 py-1.5 rounded-full bg-[#212121] border border-[#333333] text-xs font-mono text-[#9a9a9a] flex items-center space-x-2.5 opacity-0 pointer-events-none transition-opacity duration-200">
+      <span id="response-status-dot" class="w-1.5 h-1.5 rounded-full bg-white"></span>
+      <span id="response-status-text">Triton harness online</span>
+    </div>
+
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- 4. BOTTOM FOOTER HINT & FLAT HEX BACKGROUND SWITCHER                  -->
+  <!-- ===================================================================== -->
+  <footer class="relative z-20 w-full pb-3.5 px-4 flex items-center justify-center pointer-events-none">
+    <!-- Center Prototype Shortcut Hint -->
+    <button type="button" id="footer-audio-hint" class="text-[12px] text-[#666666] hover:text-[#9a9a9a] transition pointer-events-auto">
+      Ctrl+Shift+D for audio mode
+    </button>
+
+    <!-- Bottom-Right Flat Hex Background Mode Switcher (No Ambient Mode; Off = 100% Off) -->
+    <div class="fixed bottom-3 right-4 z-30 flex flex-col items-end space-y-2 pointer-events-auto">
+      
+      <!-- Popover Settings Card -->
+      <div id="hex-settings-popover"
+           class="hidden w-60 rounded-xl bg-[#1f1f1f] border border-[#333333] p-3.5 text-xs font-mono text-white space-y-3 mb-1">
+        <div class="flex items-center justify-between border-b border-[#2e2e2e] pb-2">
+          <span class="uppercase tracking-wider text-[10px] text-[#8a8a8a] font-semibold">Hex Grid Settings</span>
+          <span id="fps-readout" class="text-[10px] text-[#8a8a8a]">60 FPS</span>
+        </div>
+
+        <!-- Hex Cell Radius Slider -->
+        <div>
+          <div class="flex justify-between text-[11px] mb-1">
+            <span class="text-[#8a8a8a]">Hexagon Size</span>
+            <span id="hex-size-label">18px</span>
+          </div>
+          <input id="hex-size-slider" type="range" min="10" max="34" value="18" step="1" class="w-full" />
+        </div>
+
+        <!-- Background Contrast Slider -->
+        <div>
+          <div class="flex justify-between text-[11px] mb-1">
+            <span class="text-[#8a8a8a]">Contrast</span>
+            <span id="hex-intensity-label">50%</span>
+          </div>
+          <input id="hex-intensity-slider" type="range" min="10" max="100" value="50" step="5" class="w-full" />
+        </div>
+
+        <!-- Render Palette Mode -->
+        <div>
+          <span class="text-[11px] text-[#8a8a8a] block mb-1.5">Palette</span>
+          <div class="grid grid-cols-3 gap-1 bg-[#181818] p-1 rounded-lg border border-[#2c2c2c] text-[10px]">
+            <button data-palette="mono" class="palette-btn py-1 rounded bg-[#2e2e2e] text-white font-medium transition">Flat Gray</button>
+            <button data-palette="binary" class="palette-btn py-1 rounded text-[#8a8a8a] hover:text-white transition">2-Tone</button>
+            <button data-palette="color" class="palette-btn py-1 rounded text-[#8a8a8a] hover:text-white transition">Color</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flat Pill Switcher: Off | Hex Grid | Synth Video | Load Media -->
+      <div class="flex items-center bg-[#212121] border border-[#333333] rounded-full p-1 text-[11px] font-mono">
+        
+        <!-- Mode 0: Completely Off (Pure #181818 Flat Prototype Look) -->
+        <button data-source="off"
+                class="source-btn px-2.5 py-1 rounded-full text-[#8a8a8a] hover:text-white transition">
+          Off
+        </button>
+
+        <!-- Mode 1: Static Flat Hex Grid -->
+        <button data-source="grid"
+                class="source-btn px-2.5 py-1 rounded-full text-[#8a8a8a] hover:text-white transition">
+          Hex Grid
+        </button>
+
+        <!-- Mode 2: Built-In Procedural Synth Video (Default Active so user sees the Hex Pixel Art) -->
+        <button data-source="synth"
+                class="source-btn px-2.5 py-1 rounded-full bg-[#333333] text-white font-medium transition"
+                title="Procedural 3D Triton orbital video rendered as flat Hexagon Pixel Art">
+          Synth Video
+        </button>
+
+        <!-- Mode 3: Upload Any Video or Image File -->
+        <button id="upload-trigger-btn"
+                data-source="upload"
+                class="source-btn px-2.5 py-1 rounded-full text-[#8a8a8a] hover:text-white transition flex items-center space-x-1"
+                title="Load any video or image file into the Hexagon Pixel Art grid">
+          <span id="upload-btn-label">Load Video</span>
+        </button>
+
+        <!-- Divider -->
+        <div class="w-px h-3.5 bg-[#333333] mx-1"></div>
+
+        <!-- Settings Popover Toggle Button -->
+        <button id="toggle-settings-btn"
+                class="p-1 rounded-full text-[#8a8a8a] hover:text-white transition"
+                title="Hexagon Size & Contrast">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
+        </button>
+
+      </div>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- 5. AUTONOMOUS MASCOT & FLAT HEXAGONAL PIXEL-ART ENGINE SCRIPT         -->
+  <!-- ===================================================================== -->
+  <script>
+    /*************************************************************************
+     * PART A: TRITON CONCEPT 02 MASCOT ENGINE (AUTONOMOUS ONLY, NO MOUSE TRACKING)
+     *************************************************************************/
+    const mascotState = {
+      mode: 'idle', // 'idle' | 'typing' | 'listening' | 'thinking' | 'happy'
+      gazeX: 0,
+      gazeY: 0,
+      targetGazeX: 0,
+      targetGazeY: 0,
+      isBlinking: false,
+      lastBlink: performance.now(),
+      nextBlinkInterval: 3200,
+      lastSaccade: performance.now(),
+      nextSaccadeInterval: 2400,
+    };
+
+    const mascotDOM = {
+      lockup: document.getElementById('hero-lockup'),
+      headGroup: document.getElementById('mascot-head-group'),
+      hexBody: document.getElementById('mascot-hex-body'),
+      eyesGaze: document.getElementById('mascot-eyes-gaze'),
+      leftEyeWrapper: document.getElementById('left-eye-wrapper'),
+      rightEyeWrapper: document.getElementById('right-eye-wrapper'),
+      leftEyePill: document.getElementById('left-eye-pill'),
+      rightEyePill: document.getElementById('right-eye-pill'),
+      leftEyeArch: document.getElementById('left-eye-arch'),
+      rightEyeArch: document.getElementById('right-eye-arch'),
+      voiceRing: document.getElementById('mascot-voice-ring'),
+      promptForm: document.getElementById('prompt-form'),
+      promptInput: document.getElementById('prompt-input'),
+      voiceMicBtn: document.getElementById('voice-mic-btn'),
+      responsePill: document.getElementById('agent-response-pill'),
+      responseText: document.getElementById('response-status-text'),
+    };
+
+    // Generate Rounded Pointy-Top Hexagon Path for Concept 02 Mascot
+    function buildRoundedHexPath(cx, cy, radius, cornerRadius) {
+      const angles = [
+        -Math.PI / 2,
+        -Math.PI / 6,
+        Math.PI / 6,
+        Math.PI / 2,
+        (5 * Math.PI) / 6,
+        (7 * Math.PI) / 6
+      ];
+      const pts = angles.map(a => ({
+        x: cx + radius * Math.cos(a),
+        y: cy + radius * Math.sin(a)
+      }));
+      const trim = Math.min(cornerRadius / Math.sqrt(3), radius * 0.42);
+      let d = '';
+
+      for (let i = 0; i < 6; i++) {
+        const curr = pts[i];
+        const prev = pts[(i + 5) % 6];
+        const next = pts[(i + 1) % 6];
+
+        const inLen = Math.hypot(prev.x - curr.x, prev.y - curr.y);
+        const outLen = Math.hypot(next.x - curr.x, next.y - curr.y);
+
+        const sx = curr.x + ((prev.x - curr.x) / inLen) * trim;
+        const sy = curr.y + ((prev.y - curr.y) / inLen) * trim;
+        const ex = curr.x + ((next.x - curr.x) / outLen) * trim;
+        const ey = curr.y + ((next.y - curr.y) / outLen) * trim;
+
+        d += (i === 0 ? `M ${sx.toFixed(2)} ${sy.toFixed(2)} ` : `L ${sx.toFixed(2)} ${sy.toFixed(2)} `);
+        d += `A ${cornerRadius} ${cornerRadius} 0 0 1 ${ex.toFixed(2)} ${ey.toFixed(2)} `;
+      }
+      return d + 'Z';
+    }
+
+    // Initialize Flat Concept 02 Mascot Hexagon
+    mascotDOM.hexBody.setAttribute('d', buildRoundedHexPath(100, 100, 90, 18));
+
+    // Natural Eyelid Blink
+    function triggerMascotBlink(doubleBlink = false) {
+      if (mascotState.isBlinking || mascotState.mode === 'happy') return;
+      mascotState.isBlinking = true;
+
+      mascotDOM.leftEyeWrapper.style.transform = 'scaleY(0.05)';
+      mascotDOM.rightEyeWrapper.style.transform = 'scaleY(0.05)';
+
+      setTimeout(() => {
+        mascotDOM.leftEyeWrapper.style.transform = 'scaleY(1)';
+        mascotDOM.rightEyeWrapper.style.transform = 'scaleY(1)';
+
+        if (doubleBlink) {
+          setTimeout(() => {
+            mascotDOM.leftEyeWrapper.style.transform = 'scaleY(0.05)';
+            mascotDOM.rightEyeWrapper.style.transform = 'scaleY(0.05)';
+            setTimeout(() => {
+              mascotDOM.leftEyeWrapper.style.transform = 'scaleY(1)';
+              mascotDOM.rightEyeWrapper.style.transform = 'scaleY(1)';
+              mascotState.isBlinking = false;
+            }, 90);
+          }, 80);
+        } else {
+          setTimeout(() => {
+            mascotState.isBlinking = false;
+          }, 100);
+        }
+      }, 75);
+    }
+
+    // Set Mascot Behavioral State
+    function setMascotMode(newMode) {
+      mascotState.mode = newMode;
+      mascotDOM.eyesGaze.classList.remove('thinking-scan');
+      mascotDOM.voiceRing.className = 'absolute inset-1 rounded-2xl border-2 border-white/40 opacity-0 pointer-events-none';
+      mascotDOM.leftEyePill.style.opacity = '1';
+      mascotDOM.rightEyePill.style.opacity = '1';
+      mascotDOM.leftEyeArch.style.opacity = '0';
+      mascotDOM.rightEyeArch.style.opacity = '0';
+      mascotDOM.headGroup.style.transform = 'rotate(0deg)';
+
+      if (newMode === 'listening') {
+        mascotDOM.voiceRing.className = 'absolute inset-1 rounded-2xl border-2 border-white/40 voice-ring pointer-events-none';
+        mascotDOM.leftEyeWrapper.style.transform = 'scale(1.06)';
+        mascotDOM.rightEyeWrapper.style.transform = 'scale(1.06)';
+        mascotState.targetGazeX = 0;
+        mascotState.targetGazeY = -2;
+      } else if (newMode === 'thinking') {
+        mascotDOM.eyesGaze.classList.add('thinking-scan');
+      } else if (newMode === 'happy') {
+        mascotDOM.leftEyePill.style.opacity = '0';
+        mascotDOM.rightEyePill.style.opacity = '0';
+        mascotDOM.leftEyeArch.style.opacity = '1';
+        mascotDOM.rightEyeArch.style.opacity = '1';
+        mascotState.targetGazeX = 0;
+        mascotState.targetGazeY = -2;
+      } else {
+        mascotDOM.leftEyeWrapper.style.transform = 'scale(1)';
+        mascotDOM.rightEyeWrapper.style.transform = 'scale(1)';
+      }
+    }
+
+    // Show Temporary Status Pill Below Input Bar
+    let statusHideTimer = null;
+    function showAgentStatus(message, duration = 3500) {
+      mascotDOM.responseText.textContent = message;
+      mascotDOM.responsePill.classList.remove('opacity-0');
+      mascotDOM.responsePill.classList.add('opacity-100');
+
+      clearTimeout(statusHideTimer);
+      if (duration > 0) {
+        statusHideTimer = setTimeout(() => {
+          mascotDOM.responsePill.classList.add('opacity-0');
+          mascotDOM.responsePill.classList.remove('opacity-100');
+        }, duration);
+      }
+    }
+
+    // Input Bar Interactions (Mascot looks down at the input bar while typing)
+    mascotDOM.promptInput.addEventListener('focus', () => {
+      if (mascotState.mode !== 'listening') {
+        setMascotMode('typing');
+        const len = mascotDOM.promptInput.value.length;
+        mascotState.targetGazeX = Math.min(9, -7 + len * 0.35);
+        mascotState.targetGazeY = 8;
+      }
+    });
+
+    mascotDOM.promptInput.addEventListener('input', (e) => {
+      const len = e.target.value.length;
+      mascotState.targetGazeX = Math.max(-9, Math.min(9, -7 + len * 0.35));
+      mascotState.targetGazeY = 8;
+    });
+
+    mascotDOM.promptInput.addEventListener('blur', () => {
+      if (mascotState.mode === 'typing') {
+        setMascotMode('idle');
+        mascotState.targetGazeX = 0;
+        mascotState.targetGazeY = 0;
+      }
+    });
+
+    // Submitting a Message
+    mascotDOM.promptForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const query = mascotDOM.promptInput.value.trim();
+      if (!query) {
+        triggerMascotBlink(true);
+        mascotDOM.promptInput.focus();
+        return;
+      }
+
+      setMascotMode('thinking');
+      showAgentStatus(`Triton agent executing: "${query.slice(0, 42)}${query.length > 42 ? '...' : ''}"`, 0);
+      mascotDOM.promptInput.value = '';
+      mascotDOM.promptInput.blur();
+
+      setTimeout(() => {
+        setMascotMode('happy');
+        showAgentStatus('Task dispatched to always-on harness', 3400);
+        setTimeout(() => {
+          setMascotMode('idle');
+        }, 1500);
+      }, 1200);
+    });
+
+    // Toggle Audio Mode (Mic Button or Ctrl+Shift+D)
+    function toggleAudioMode() {
+      if (mascotState.mode === 'listening') {
+        setMascotMode('idle');
+        mascotDOM.voiceMicBtn.classList.remove('text-white', 'bg-[#333333]');
+        showAgentStatus('Audio mode off', 2000);
+      } else {
+        setMascotMode('listening');
+        mascotDOM.voiceMicBtn.classList.add('text-white', 'bg-[#333333]');
+        showAgentStatus('Audio mode active • Listening...', 0);
+      }
+    }
+
+    mascotDOM.voiceMicBtn.addEventListener('click', toggleAudioMode);
+    document.getElementById('footer-audio-hint').addEventListener('click', toggleAudioMode);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        toggleAudioMode();
+      }
+    });
+
+    // Clicking the Mascot Lockup triggers a friendly double-blink
+    mascotDOM.lockup.addEventListener('click', () => {
+      triggerMascotBlink(true);
+    });
+
+    // Top bar interactive buttons
+    document.getElementById('reset-tab-btn').addEventListener('click', () => {
+      mascotDOM.promptInput.value = '';
+      setMascotMode('idle');
+      triggerMascotBlink(false);
+      showAgentStatus('Agent session reset', 2000);
+    });
+    document.getElementById('new-tab-btn').addEventListener('click', () => {
+      mascotDOM.promptInput.value = '';
+      mascotDOM.promptInput.focus();
+      showAgentStatus('New agent tab ready', 2000);
+    });
+    document.getElementById('history-btn').addEventListener('click', () => {
+      showAgentStatus('No previous agent runs in this session', 2400);
+    });
+
+
+    /*************************************************************************
+     * PART B: FLAT HEXAGONAL GRID & VIDEO-TO-HEX-PIXEL-ART ENGINE
+     * (NO AMBIENT MODE, NO MOUSE HIGHLIGHTING, OFF = COMPLETELY OFF)
+     *************************************************************************/
+    const hexCanvas = document.getElementById('hex-canvas');
+    const ctx = hexCanvas.getContext('2d', { alpha: false });
+
+    const sampleCanvas = document.createElement('canvas');
+    const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+
+    // Offscreen procedural 3D Synth Video buffer (renders rotating Triton moon + orbital ring)
+    const synthCanvas = document.createElement('canvas');
+    synthCanvas.width = 160;
+    synthCanvas.height = 100;
+    const synthCtx = synthCanvas.getContext('2d');
+
+    const sourceVideo = document.getElementById('source-video');
+    const sourceImage = document.getElementById('source-image');
+    const uploadInput = document.getElementById('media-upload-input');
+
+    const hexEngine = {
+      sourceMode: 'synth', // 'off' | 'grid' | 'synth' | 'video' | 'image'
+      hexRadius: 18,       // Outer radius of each hexagon cell
+      intensity: 0.50,     // Contrast multiplier
+      palette: 'mono',     // 'mono' | 'binary' | 'color'
+      gridCells: [],
+      cols: 0,
+      rows: 0,
+      width: 0,
+      height: 0,
+      lastFrameTime: performance.now(),
+      frameCount: 0,
+    };
+
+    // Precompute unit pointy-top hexagon vertices
+    const UNIT_HEX = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = -Math.PI / 2 + (i * Math.PI) / 3;
+      UNIT_HEX.push({
+        cos: Math.cos(angle),
+        sin: Math.sin(angle)
+      });
+    }
+
+    // Build / Rebuild the Honeycomb Tessellation Grid
+    function rebuildHexGrid() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      hexEngine.width = window.innerWidth;
+      hexEngine.height = window.innerHeight;
+      hexCanvas.width = hexEngine.width * dpr;
+      hexCanvas.height = hexEngine.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const R = hexEngine.hexRadius;
+      const hexWidth = Math.sqrt(3) * R;
+      const vertSpacing = 1.5 * R;
+
+      hexEngine.cols = Math.ceil(hexEngine.width / hexWidth) + 2;
+      hexEngine.rows = Math.ceil(hexEngine.height / vertSpacing) + 2;
+
+      sampleCanvas.width = Math.max(1, hexEngine.cols);
+      sampleCanvas.height = Math.max(1, hexEngine.rows);
+
+      hexEngine.gridCells = [];
+      for (let row = 0; row < hexEngine.rows; row++) {
+        const y = row * vertSpacing;
+        const xOffset = (row % 2 !== 0) ? hexWidth * 0.5 : 0;
+        for (let col = 0; col < hexEngine.cols; col++) {
+          const x = col * hexWidth + xOffset;
+          hexEngine.gridCells.push({ col, row, x, y });
+        }
+      }
+    }
+
+    // Render Procedural "Synth Video" Frame (Orbiting Ringed Planet)
+    function renderSynthVideoBuffer(timeSec) {
+      const w = synthCanvas.width;
+      const h = synthCanvas.height;
+      synthCtx.fillStyle = '#000000';
+      synthCtx.fillRect(0, 0, w, h);
+
+      const cx = w * 0.5 + Math.sin(timeSec * 0.45) * 14;
+      const cy = h * 0.5 + Math.cos(timeSec * 0.35) * 7;
+      const planetR = Math.min(w, h) * 0.25;
+
+      synthCtx.save();
+      synthCtx.translate(cx, cy);
+
+      const tilt = -0.38 + Math.sin(timeSec * 0.25) * 0.07;
+      synthCtx.rotate(tilt);
+
+      // 1. Back half of orbital ring
+      synthCtx.beginPath();
+      synthCtx.ellipse(0, 0, planetR * 2.25, planetR * 0.58, 0, Math.PI, Math.PI * 2);
+      synthCtx.strokeStyle = '#757575';
+      synthCtx.lineWidth = 4.5;
+      synthCtx.stroke();
+
+      // 2. Triton Moon Body
+      const grad = synthCtx.createRadialGradient(
+        Math.cos(timeSec * 0.85) * planetR * 0.45,
+        -planetR * 0.25,
+        planetR * 0.1,
+        0,
+        0,
+        planetR
+      );
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.55, '#a8a8a8');
+      grad.addColorStop(0.85, '#383838');
+      grad.addColorStop(1, '#101010');
+
+      synthCtx.beginPath();
+      synthCtx.arc(0, 0, planetR, 0, Math.PI * 2);
+      synthCtx.fillStyle = grad;
+      synthCtx.fill();
+
+      // 3. Front half of orbital ring
+      synthCtx.beginPath();
+      synthCtx.ellipse(0, 0, planetR * 2.25, planetR * 0.58, 0, 0, Math.PI);
+      synthCtx.strokeStyle = '#f2f2f2';
+      synthCtx.lineWidth = 5.5;
+      synthCtx.stroke();
+
+      // 4. Orbiting Satellite Node
+      const orbitAngle = timeSec * 1.8;
+      const satX = Math.cos(orbitAngle) * planetR * 2.25;
+      const satY = Math.sin(orbitAngle) * planetR * 0.58;
+      if (Math.sin(orbitAngle) > -0.3) {
+        synthCtx.beginPath();
+        synthCtx.arc(satX, satY, 4.5, 0, Math.PI * 2);
+        synthCtx.fillStyle = '#ffffff';
+        synthCtx.fill();
+      }
+
+      synthCtx.restore();
+    }
+
+    // Draw a single flat pointy-top hexagon at (cx, cy) with radius r
+    function drawHexagon(cx, cy, r) {
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const vx = cx + r * UNIT_HEX[i].cos;
+        const vy = cy + r * UNIT_HEX[i].sin;
+        if (i === 0) ctx.moveTo(vx, vy);
+        else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
+    }
+
+    // Sample Media Source with "cover" aspect ratio into sampleCanvas
+    function sampleMediaToGrid(mediaElem, mediaWidth, mediaHeight) {
+      const gw = sampleCanvas.width;
+      const gh = sampleCanvas.height;
+      if (!mediaWidth || !mediaHeight) return null;
+
+      const gridAspect = gw / gh;
+      const mediaAspect = mediaWidth / mediaHeight;
+      let sx = 0, sy = 0, sw = mediaWidth, sh = mediaHeight;
+
+      if (mediaAspect > gridAspect) {
+        sw = mediaHeight * gridAspect;
+        sx = (mediaWidth - sw) * 0.5;
+      } else {
+        sh = mediaWidth / gridAspect;
+        sy = (mediaHeight - sh) * 0.5;
+      }
+
+      sampleCtx.clearRect(0, 0, gw, gh);
+      sampleCtx.drawImage(mediaElem, sx, sy, sw, sh, 0, 0, gw, gh);
+      return sampleCtx.getImageData(0, 0, gw, gh).data;
+    }
+
+    // Master 60FPS Loop
+    function masterLoop(now) {
+      const timeSec = now * 0.001;
+
+      // FPS Readout
+      hexEngine.frameCount++;
+      if (now - hexEngine.lastFrameTime >= 500) {
+        const fps = Math.round((hexEngine.frameCount * 1000) / (now - hexEngine.lastFrameTime));
+        document.getElementById('fps-readout').textContent = `${Math.min(60, fps)} FPS`;
+        hexEngine.frameCount = 0;
+        hexEngine.lastFrameTime = now;
+      }
+
+      // -------------------------------------------------------------------
+      // 1. AUTONOMOUS MASCOT BLINKING & SACCADES (NO MOUSE TRACKING)
+      // -------------------------------------------------------------------
+      if (now - mascotState.lastBlink > mascotState.nextBlinkInterval) {
+        const isDouble = Math.random() < 0.24;
+        triggerMascotBlink(isDouble);
+        mascotState.lastBlink = now;
+        mascotState.nextBlinkInterval = 2800 + Math.random() * 3400;
+      }
+
+      if (mascotState.mode === 'idle' && (now - mascotState.lastSaccade > mascotState.nextSaccadeInterval)) {
+        const glances = [
+          { x: 0, y: 0 },
+          { x: 0, y: 0 },
+          { x: -9, y: 0 },
+          { x: 9, y: 0 },
+          { x: -7, y: -5 },
+          { x: 7, y: -5 },
+          { x: 0, y: 5 }
+        ];
+        const pick = glances[Math.floor(Math.random() * glances.length)];
+        mascotState.targetGazeX = pick.x;
+        mascotState.targetGazeY = pick.y;
+        mascotState.lastSaccade = now;
+        mascotState.nextSaccadeInterval = 2000 + Math.random() * 2600;
+      }
+
+      // Smooth Damped Eye Movement
+      mascotState.gazeX += (mascotState.targetGazeX - mascotState.gazeX) * 0.16;
+      mascotState.gazeY += (mascotState.targetGazeY - mascotState.gazeY) * 0.16;
+      mascotDOM.eyesGaze.style.transform = `translate(${mascotState.gazeX.toFixed(2)}px, ${mascotState.gazeY.toFixed(2)}px)`;
+
+      // -------------------------------------------------------------------
+      // 2. RENDER BACKGROUND (OFF = PURE #181818 FLAT PROTOTYPE LOOK)
+      // -------------------------------------------------------------------
+      ctx.fillStyle = '#181818';
+      ctx.fillRect(0, 0, hexEngine.width, hexEngine.height);
+
+      // When set to 'off', skip all hexagon drawing completely
+      if (hexEngine.sourceMode !== 'off') {
+        let pixelData = null;
+
+        if (hexEngine.sourceMode === 'synth') {
+          renderSynthVideoBuffer(timeSec);
+          pixelData = sampleMediaToGrid(synthCanvas, synthCanvas.width, synthCanvas.height);
+        } else if (hexEngine.sourceMode === 'video' && sourceVideo.readyState >= 2) {
+          pixelData = sampleMediaToGrid(sourceVideo, sourceVideo.videoWidth, sourceVideo.videoHeight);
+        } else if (hexEngine.sourceMode === 'image' && sourceImage.complete && sourceImage.naturalWidth > 0) {
+          pixelData = sampleMediaToGrid(sourceImage, sourceImage.naturalWidth, sourceImage.naturalHeight);
+        }
+
+        const R = hexEngine.hexRadius;
+        const innerRadius = Math.max(2, R - 1.25); // Crisp dark #181818 mortar between flat hexagons
+        const cells = hexEngine.gridCells;
+        const totalCells = cells.length;
+        const intensity = hexEngine.intensity;
+
+        for (let i = 0; i < totalCells; i++) {
+          const cell = cells[i];
+          let r = 30, g = 30, b = 30;
+
+          if (pixelData) {
+            const pIdx = (cell.row * sampleCanvas.width + cell.col) * 4;
+            const sr = pixelData[pIdx];
+            const sg = pixelData[pIdx + 1];
+            const sb = pixelData[pIdx + 2];
+
+            // Perceived luminance quantized into flat steps
+            const luma = (0.299 * sr + 0.587 * sg + 0.114 * sb) / 255;
+            const quantizedLuma = Math.round(luma * 7) / 7;
+            const finalLuma = Math.min(1, quantizedLuma * intensity);
+
+            if (hexEngine.palette === 'mono') {
+              // Neutral matte grayscale matching the prototype (#1e1e1e -> #cfcfcf)
+              const v = Math.round(30 + finalLuma * 175);
+              r = v;
+              g = v;
+              b = v;
+            } else if (hexEngine.palette === 'binary') {
+              // Strict 2-Color flat contrast
+              const v = (finalLuma > 0.24) ? 58 : 29;
+              r = v;
+              g = v;
+              b = v;
+            } else {
+              // Flat Color Pixel Art
+              r = Math.min(255, Math.round(28 + sr * intensity));
+              g = Math.min(255, Math.round(28 + sg * intensity));
+              b = Math.min(255, Math.round(28 + sb * intensity));
+            }
+          } else {
+            // Static 'grid' mode: uniform flat #1f1f1f hexagons with #181818 gaps
+            r = 31;
+            g = 31;
+            b = 31;
+          }
+
+          drawHexagon(cell.x, cell.y, innerRadius);
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fill();
+        }
+      }
+
+      requestAnimationFrame(masterLoop);
+    }
+
+    /*************************************************************************
+     * PART C: BACKGROUND MODE SWITCHER & SETTINGS EVENTS
+     *************************************************************************/
+    window.addEventListener('resize', rebuildHexGrid);
+
+    const sourceBtns = document.querySelectorAll('.source-btn');
+    function updateActiveSourceButton(activeMode) {
+      sourceBtns.forEach(btn => {
+        if (btn.dataset.source === activeMode) {
+          btn.className = 'source-btn px-2.5 py-1 rounded-full bg-[#333333] text-white font-medium transition flex items-center space-x-1';
+        } else {
+          btn.className = 'source-btn px-2.5 py-1 rounded-full text-[#8a8a8a] hover:text-white transition flex items-center space-x-1';
+        }
+      });
+    }
+
+    // Mode 0: Off (Completely turns off hexagon grid)
+    document.querySelector('[data-source="off"]').addEventListener('click', () => {
+      sourceVideo.pause();
+      hexEngine.sourceMode = 'off';
+      updateActiveSourceButton('off');
+      showAgentStatus('Hexagon grid completely off', 2000);
+    });
+
+    // Mode 1: Static Flat Hex Grid
+    document.querySelector('[data-source="grid"]').addEventListener('click', () => {
+      sourceVideo.pause();
+      hexEngine.sourceMode = 'grid';
+      updateActiveSourceButton('grid');
+      showAgentStatus('Flat Hexagon Grid active', 2000);
+    });
+
+    // Mode 2: Procedural 3D Synth Video
+    document.querySelector('[data-source="synth"]').addEventListener('click', () => {
+      sourceVideo.pause();
+      hexEngine.sourceMode = 'synth';
+      updateActiveSourceButton('synth');
+      showAgentStatus('Synth Video Hexagon Pixel Art active', 2400);
+    });
+
+    // Mode 3: Upload Any Video or Image File
+    document.getElementById('upload-trigger-btn').addEventListener('click', () => {
+      uploadInput.click();
+    });
+
+    uploadInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const url = URL.createObjectURL(file);
+      const isVideo = file.type.startsWith('video/');
+
+      if (isVideo) {
+        sourceVideo.src = url;
+        sourceVideo.play().catch(() => {});
+        hexEngine.sourceMode = 'video';
+        showAgentStatus(`Playing "${file.name}" as Hexagon Pixel Art`, 3000);
+      } else {
+        sourceVideo.pause();
+        sourceImage.src = url;
+        hexEngine.sourceMode = 'image';
+        showAgentStatus(`Displaying "${file.name}" as Hexagon Pixel Art`, 3000);
+      }
+
+      document.getElementById('upload-btn-label').textContent = file.name.slice(0, 9) + (file.name.length > 9 ? '…' : '');
+      updateActiveSourceButton('upload');
+    });
+
+    // Settings Popover Toggle (both bottom-right button and top-right gear icon)
+    const settingsPopover = document.getElementById('hex-settings-popover');
+    document.getElementById('toggle-settings-btn').addEventListener('click', () => {
+      settingsPopover.classList.toggle('hidden');
+    });
+    document.getElementById('header-gear-btn').addEventListener('click', () => {
+      settingsPopover.classList.toggle('hidden');
+    });
+
+    document.getElementById('hex-size-slider').addEventListener('input', (e) => {
+      hexEngine.hexRadius = parseInt(e.target.value, 10);
+      document.getElementById('hex-size-label').textContent = `${hexEngine.hexRadius}px`;
+      rebuildHexGrid();
+    });
+
+    document.getElementById('hex-intensity-slider').addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      hexEngine.intensity = val / 100;
+      document.getElementById('hex-intensity-label').textContent = `${val}%`;
+    });
+
+    document.querySelectorAll('.palette-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        hexEngine.palette = btn.dataset.palette;
+        document.querySelectorAll('.palette-btn').forEach(b => {
+          b.className = (b === btn)
+            ? 'palette-btn py-1 rounded bg-[#2e2e2e] text-white font-medium transition'
+            : 'palette-btn py-1 rounded text-[#8a8a8a] hover:text-white transition';
+        });
+      });
+    });
+
+    // Drag & Drop Any Video/Image Directly onto the Window
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!file) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      uploadInput.files = dt.files;
+      uploadInput.dispatchEvent(new Event('change'));
+    });
+
+    // Initialize on Window Load
+    window.onload = function () {
+      rebuildHexGrid();
+      requestAnimationFrame(masterLoop);
+    };
+  </script>
+</body>
+</html>

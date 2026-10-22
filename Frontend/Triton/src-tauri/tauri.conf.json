@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "triton",
+  "productName": "Triton",
   "version": "0.1.0",
   "identifier": "com.vk200.triton",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "triton",
+        "title": "Triton",
         "width": 800,
         "height": 600,
         "decorations": false

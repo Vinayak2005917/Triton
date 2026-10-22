@@ -15,6 +15,7 @@ from speak import text_to_speech
 from dotenv import load_dotenv
 from websocket import set_active_connection, reset_active_connection
 from storage import store
+from memory import close_memory_storage, initialize_memory_storage
 import uuid
 
 load_dotenv()
@@ -24,7 +25,7 @@ if not api_key:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    store.initialize()
+    initialize_memory_storage()
     checkpoint_path = store.path.with_name(f"{store.path.stem}_checkpoints{store.path.suffix}")
     connection = sqlite3.connect(checkpoint_path, timeout=30)
     try:
@@ -36,8 +37,11 @@ async def lifespan(app: FastAPI):
         main_agent.set_checkpointer(checkpointer)
         for thread_id, request_id in store.recover_interrupted_requests():
             await main_agent.delete_request_checkpoint(thread_id, request_id)
-        yield
-        main_agent.set_checkpointer(None)
+        try:
+            yield
+        finally:
+            main_agent.set_checkpointer(None)
+            close_memory_storage()
 
 
 app = FastAPI(lifespan=lifespan)

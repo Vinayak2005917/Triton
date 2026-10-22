@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <g transform="translate(-15 -7) scale(1.15 1.07)">
+  <path
+    d="M 91 15.2 A 18 18 0 0 1 109 15.2 L 168.94 49.8 A 18 18 0 0 1 177.94 65.39 L 177.94 134.61 A 18 18 0 0 1 168.94 150.2 L 109 184.8 A 18 18 0 0 1 91 184.8 L 31.06 150.2 A 18 18 0 0 1 22.06 134.61 L 22.06 65.39 A 18 18 0 0 1 31.06 49.8 Z"
+    fill="#252525"
+    stroke="#e5e5e5"
+    stroke-width="2"
+  />
+  <g fill="#fff">
+    <rect x="67" y="68" width="24" height="64" rx="12" />
+    <rect x="109" y="68" width="24" height="64" rx="12" />
+  </g>
+  </g>
+</svg>

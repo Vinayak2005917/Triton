@@ -6,6 +6,8 @@ from langgraph.graph.message import add_messages
 from main_agent import ask_agent, current_model
 from pydantic import BaseModel
 from storage import store
+from memory import consider_saving_memory
+from utils import debug_print
 
 
 class TritonState(TypedDict):
@@ -64,6 +66,19 @@ async def research_edit_node(state: TritonState) -> TritonState:
     return state
 
 
+async def memory_writer_node(state: TritonState) -> TritonState:
+    try:
+        await consider_saving_memory(
+            state["query"],
+            state["response"],
+            current_model,
+        )
+    except Exception as error:
+        # Memory is supplementary; a failed write must not discard the answer.
+        debug_print(f"Long-term memory curation failed: {error}")
+    return state
+
+
 async def suggestions_node(state: TritonState) -> TritonState:
     prompt = (
         "Suggest exactly 3 concise next prompts for the user based on their request "
@@ -85,11 +100,13 @@ async def suggestions_node(state: TritonState) -> TritonState:
 builder = StateGraph(TritonState)
 builder.add_node("tab_name", tab_name_node)
 builder.add_node("research_edit", research_edit_node)
+builder.add_node("memory_writer", memory_writer_node)
 builder.add_node("suggestions", suggestions_node)
 
 builder.add_edge(START, "tab_name")
 builder.add_edge("tab_name", "research_edit")
-builder.add_edge("research_edit", "suggestions")
+builder.add_edge("research_edit", "memory_writer")
+builder.add_edge("memory_writer", "suggestions")
 builder.add_edge("suggestions", END)
 graph = builder.compile()
 

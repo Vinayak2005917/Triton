@@ -23,6 +23,7 @@ dependencies = [
     "piper-tts>=1.7.0",
     "python-dotenv>=1.2.3",
     "python-multipart>=0.0.32",
+    "qdrant-client>=1.12.1,<1.13",
     "safetensors>=0.8.0",
     "scipy>=1.17.1",
     "serpapi>=1.1.0",

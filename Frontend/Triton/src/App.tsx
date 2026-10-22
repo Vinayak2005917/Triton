@@ -1,6 +1,10 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import Markdown from "react-markdown";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import defaultHexVideo from "../Interstellar-Gargantua-black-SnapYT.App.mp4?url";
+import sendButtonImage from "./assets/Send.png";
+import HexBackground, { type HexMode, type HexPalette } from "./HexBackground";
+import TritonMascot from "./TritonMascot";
 import "./App.css";
 
 type Message = {
@@ -45,6 +49,11 @@ type HistoryConversation = {
 const API_BASE = "http://localhost:8000";
 const TRANSCRIPTION_WS_URL = "ws://127.0.0.1:8001/v1/audio/stream";
 const TRANSCRIPTION_SAMPLE_RATE = 16000;
+const HEX_SETTINGS_VERSION = "2";
+const DEFAULT_HEX_VIDEO_NAME = "Interstellar-Gargantua-black-SnapYT.App.mp4";
+const WAVEFORM_BAR_WIDTH = 3;
+const WAVEFORM_BAR_PITCH = 7;
+const WAVEFORM_SAMPLE_INTERVAL = 260;
 
 function resampleAudio(input: Float32Array, inputRate: number, outputRate: number) {
   if (inputRate === outputRate) return input.slice();
@@ -60,6 +69,39 @@ function resampleAudio(input: Float32Array, inputRate: number, outputRate: numbe
     output[index] = input[lower] + (input[upper] - input[lower]) * fraction;
   }
   return output;
+}
+
+function drawWaveform(canvas: HTMLCanvasElement, levels: number[], offset: number) {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  if (!width || !height) return;
+
+  const pixelRatio = window.devicePixelRatio || 1;
+  const pixelWidth = Math.round(width * pixelRatio);
+  const pixelHeight = Math.round(height * pixelRatio);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+  }
+
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#d2d2d2";
+
+  const barCount = Math.ceil(width / WAVEFORM_BAR_PITCH) + 1;
+  while (levels.length < barCount) levels.push(0);
+  if (levels.length > barCount) levels.splice(0, levels.length - barCount);
+
+  for (let index = 0; index < levels.length; index += 1) {
+    const x = index * WAVEFORM_BAR_PITCH - offset;
+    if (x + WAVEFORM_BAR_WIDTH < 0 || x > width) continue;
+    const barHeight = 2 + levels[index] * 22;
+    context.beginPath();
+    context.roundRect(x, (height - barHeight) / 2, WAVEFORM_BAR_WIDTH, barHeight, WAVEFORM_BAR_WIDTH / 2);
+    context.fill();
+  }
 }
 
 function createThreadId() {
@@ -201,12 +243,60 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState("");
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  const [transcriptionPhase, setTranscriptionPhase] = useState<"connecting" | "recording" | "finalizing" | null>(null);
   const [transcriptionError, setTranscriptionError] = useState("");
   const [socketRevision, setSocketRevision] = useState(0);
   const [workspaceLoadStatus, setWorkspaceLoadStatus] = useState<"loading" | "ready" | "error">("loading");
   const [workspaceLoadError, setWorkspaceLoadError] = useState("");
   const [workspaceRetry, setWorkspaceRetry] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [hexMode, setHexMode] = useState<HexMode>(() => {
+    if (window.localStorage.getItem("triton-hex-settings-version") !== HEX_SETTINGS_VERSION) return "media";
+    const saved = window.localStorage.getItem("triton-hex-mode");
+    return saved === "grid" || saved === "synth" || saved === "media" ? saved : "media";
+  });
+  const [hexMedia, setHexMedia] = useState<File | string>(defaultHexVideo);
+  const [hexMediaName, setHexMediaName] = useState(DEFAULT_HEX_VIDEO_NAME);
+  const hexUploadRef = useRef<HTMLInputElement>(null);
+  const [hexSize, setHexSize] = useState(() => {
+    if (window.localStorage.getItem("triton-hex-settings-version") !== HEX_SETTINGS_VERSION) return 10;
+    const saved = Number(window.localStorage.getItem("triton-hex-size"));
+    return saved >= 2 && saved <= 34 ? saved : 10;
+  });
+  const [hexIntensity, setHexIntensity] = useState(() => {
+    if (window.localStorage.getItem("triton-hex-settings-version") !== HEX_SETTINGS_VERSION) return 30;
+    const saved = Number(window.localStorage.getItem("triton-hex-intensity"));
+    return saved >= 10 && saved <= 100 ? saved : 30;
+  });
+  const [hexPalette, setHexPalette] = useState<HexPalette>(() => {
+    if (window.localStorage.getItem("triton-hex-settings-version") !== HEX_SETTINGS_VERSION) return "color";
+    const saved = window.localStorage.getItem("triton-hex-palette");
+    return saved === "binary" || saved === "color" || saved === "mono" ? saved : "color";
+  });
+  const [mascotEyeWidth, setMascotEyeWidth] = useState(() => {
+    const saved = Number(window.localStorage.getItem("triton-mascot-eye-width"));
+    return saved >= 12 && saved <= 38 ? saved : 24;
+  });
+  const [mascotEyeLength, setMascotEyeLength] = useState(() => {
+    const saved = Number(window.localStorage.getItem("triton-mascot-eye-length"));
+    return saved >= 32 && saved <= 82 ? saved : 64;
+  });
+  const [centerBlur, setCenterBlur] = useState(() => {
+    const saved = window.localStorage.getItem("triton-center-blur");
+    const value = saved === null ? 8 : Number(saved);
+    return value >= 0 && value <= 16 ? value : 8;
+  });
+  const [centerDarken, setCenterDarken] = useState(() => {
+    const saved = window.localStorage.getItem("triton-center-darken");
+    const value = saved === null ? 22 : Number(saved);
+    return value >= 0 && value <= 60 ? value : 22;
+  });
+  const [centerSideSpread, setCenterSideSpread] = useState(() => {
+    const saved = window.localStorage.getItem("triton-center-side-spread");
+    const value = saved === null ? 120 : Number(saved);
+    return value >= 0 && value <= 240 ? value : 120;
+  });
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryConversation[]>([]);
@@ -217,7 +307,6 @@ function App() {
   });
   const autoPlayTtsRef = useRef(autoPlayTts);
   autoPlayTtsRef.current = autoPlayTts;
-  const [waveform, setWaveform] = useState<number[]>(Array(28).fill(8));
   const [suggestionPlaceholder, setSuggestionPlaceholder] = useState("");
   const [visibleSuggestion, setVisibleSuggestion] = useState("");
   const [, setSuggestionIndex] = useState(0);
@@ -225,9 +314,14 @@ function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const waveformRef = useRef<HTMLCanvasElement>(null);
+  const waveformLevelsRef = useRef<number[]>([]);
+  const waveformOffsetRef = useRef(0);
+  const lastWaveformSampleAtRef = useRef(0);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const transcriptionSocketRef = useRef<WebSocket | null>(null);
   const transcriptionStartRef = useRef(false);
+  const recordingSessionRef = useRef(0);
   const finalTranscriptRef = useRef("");
   const recordingTabIdRef = useRef<number | null>(null);
   const isRecordingRef = useRef(false);
@@ -238,10 +332,118 @@ function App() {
   const socketsRef = useRef<Map<number, WebSocket>>(new Map());
   const requestMessagesRef = useRef<Map<string, { tabId: number; userMessageId: number; agentMessageId: number; toolUpdates: string[]; workspaceChanged: boolean; startedAt: number; workspaceSnapshot: string; stopRequested?: boolean }>>(new Map());
   const messagesContainerRef = useRef<HTMLElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollTargetMessageIdRef = useRef<number | null>(null);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  const isTyping = Boolean(activeTab.message || isRecording || isTranscribing);
   const updateTab = (id: number, update: Partial<Tab>) => setTabs((current) => current.map((tab) => tab.id === id ? { ...tab, ...update } : tab));
   const updateActiveTab = (update: Partial<Tab>) => updateTab(activeTab.id, update);
+
+  function resetWaveform() {
+    waveformLevelsRef.current = [];
+    waveformOffsetRef.current = 0;
+    lastWaveformSampleAtRef.current = 0;
+    const canvas = waveformRef.current;
+    if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function cancelPendingRecordingStart() {
+    recordingSessionRef.current += 1;
+    transcriptionStartRef.current = false;
+    transcriptionCompletedRef.current = true;
+    transcriptionSocketRef.current?.close();
+    transcriptionSocketRef.current = null;
+    processorRef.current?.disconnect();
+    processorRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      void audioContextRef.current.close();
+    }
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    recordingTabIdRef.current = null;
+    setIsRecording(false);
+    setIsTranscribing(false);
+    setTranscriptionPhase(null);
+    resetWaveform();
+  }
+
+  useLayoutEffect(() => {
+    const textarea = composerTextareaRef.current;
+    if (!textarea) {
+      setComposerExpanded(false);
+      return;
+    }
+    const resizeTextarea = () => {
+      textarea.style.height = "auto";
+      const contentHeight = textarea.scrollHeight;
+      const hasWrapped = contentHeight > 52;
+      textarea.style.height = `${contentHeight}px`;
+      setComposerExpanded(hasWrapped);
+    };
+    resizeTextarea();
+    let lastWidth = textarea.getBoundingClientRect().width;
+    const resizeObserver = new ResizeObserver((entries) => {
+      const width = entries[0]?.target.getBoundingClientRect().width ?? lastWidth;
+      if (Math.abs(width - lastWidth) < 0.5) return;
+      lastWidth = width;
+      resizeTextarea();
+    });
+    resizeObserver.observe(textarea);
+    window.addEventListener("resize", resizeTextarea);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", resizeTextarea);
+    };
+  }, [activeTab.id, activeTab.message]);
+
+  useLayoutEffect(() => {
+    const canvas = waveformRef.current;
+    if (!canvas || (!isRecording && !isTranscribing)) return;
+    drawWaveform(canvas, waveformLevelsRef.current, waveformOffsetRef.current);
+  }, [isRecording, isTranscribing]);
+
+  useEffect(() => {
+    window.localStorage.setItem("triton-hex-mode", hexMode);
+    window.localStorage.setItem("triton-hex-size", String(hexSize));
+    window.localStorage.setItem("triton-hex-intensity", String(hexIntensity));
+    window.localStorage.setItem("triton-hex-palette", hexPalette);
+    window.localStorage.setItem("triton-hex-settings-version", HEX_SETTINGS_VERSION);
+  }, [hexIntensity, hexMode, hexPalette, hexSize]);
+
+  useEffect(() => {
+    window.localStorage.setItem("triton-mascot-eye-width", String(mascotEyeWidth));
+    window.localStorage.setItem("triton-mascot-eye-length", String(mascotEyeLength));
+  }, [mascotEyeLength, mascotEyeWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem("triton-center-blur", String(centerBlur));
+    window.localStorage.setItem("triton-center-darken", String(centerDarken));
+    window.localStorage.setItem("triton-center-side-spread", String(centerSideSpread));
+  }, [centerBlur, centerDarken, centerSideSpread]);
+
+  useEffect(() => {
+    function acceptDroppedMedia(event: DragEvent) {
+      const file = event.dataTransfer?.files.item(0);
+      if (!file || (!file.type.startsWith("image/") && !file.type.startsWith("video/"))) return;
+      event.preventDefault();
+      setHexMedia(file);
+      setHexMediaName(file.name);
+      setHexMode("media");
+    }
+
+    function allowMediaDrop(event: DragEvent) {
+      if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) event.preventDefault();
+    }
+
+    window.addEventListener("dragover", allowMediaDrop);
+    window.addEventListener("drop", acceptDroppedMedia);
+    return () => {
+      window.removeEventListener("dragover", allowMediaDrop);
+      window.removeEventListener("drop", acceptDroppedMedia);
+    };
+  }, []);
 
   useEffect(() => {
     const targetMessageId = scrollTargetMessageIdRef.current;
@@ -645,9 +847,13 @@ function App() {
   async function startRecording() {
     if (isRecordingRef.current || transcriptionStartRef.current || isTranscribing) return;
 
+    const recordingSession = ++recordingSessionRef.current;
+    resetWaveform();
+    setComposerExpanded(false);
     transcriptionStartRef.current = true;
     setTranscriptionError("");
-    setLiveTranscript("Connecting to live transcription…");
+    setTranscriptionPhase("connecting");
+    setLiveTranscript("");
     setIsTranscribing(true);
     finalTranscriptRef.current = "";
     transcriptionCompletedRef.current = false;
@@ -657,9 +863,15 @@ function App() {
     let socket: WebSocket | null = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (recordingSession !== recordingSessionRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      streamRef.current = stream;
       socket = await new Promise<WebSocket>((resolve, reject) => {
         const candidate = new WebSocket(TRANSCRIPTION_WS_URL);
         candidate.binaryType = "arraybuffer";
+        transcriptionSocketRef.current = candidate;
         const timeout = window.setTimeout(() => {
           candidate.close();
           reject(new Error("The transcription server did not respond on port 8001."));
@@ -673,7 +885,16 @@ function App() {
           candidate.close();
           reject(new Error("Could not connect to the transcription server on port 8001."));
         }, { once: true });
+        candidate.addEventListener("close", () => {
+          window.clearTimeout(timeout);
+          reject(new Error("The transcription server connection closed before it was ready."));
+        }, { once: true });
       });
+      if (recordingSession !== recordingSessionRef.current) {
+        socket.close();
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
 
       transcriptionSocketRef.current = socket;
       socket.send(JSON.stringify({
@@ -688,12 +909,21 @@ function App() {
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
       const silentOutput = audioContext.createGain();
-      analyser.fftSize = 64;
+      analyser.fftSize = 1024;
       source.connect(analyser);
+      analyser.connect(silentOutput);
       source.connect(processor);
       processor.connect(silentOutput);
       silentOutput.gain.value = 0;
       silentOutput.connect(audioContext.destination);
+      if (audioContext.state !== "running") await audioContext.resume();
+      if (recordingSession !== recordingSessionRef.current) {
+        processor.disconnect();
+        stream.getTracks().forEach((track) => track.stop());
+        if (audioContext.state !== "closed") void audioContext.close();
+        socket.close();
+        return;
+      }
 
       streamRef.current = stream;
       analyserRef.current = analyser;
@@ -709,6 +939,7 @@ function App() {
       };
 
       socket.addEventListener("message", (event) => {
+        if (recordingSession !== recordingSessionRef.current) return;
         let data: { type?: string; text?: string; message?: string };
         try {
           data = JSON.parse(String(event.data)) as { type?: string; text?: string; message?: string };
@@ -728,15 +959,19 @@ function App() {
           if (recordingTabIdRef.current !== null) {
             updateTab(recordingTabIdRef.current, { message: transcript });
           }
+          recordingTabIdRef.current = null;
+          setTranscriptionPhase(null);
           setLiveTranscript("");
           setIsTranscribing(false);
         } else if (data.type === "error") {
           transcriptionCompletedRef.current = true;
           setTranscriptionError(data.message || "The transcription server could not transcribe this audio.");
+          setTranscriptionPhase(null);
           setIsTranscribing(false);
         }
       });
       socket.addEventListener("close", () => {
+        if (recordingSession !== recordingSessionRef.current) return;
         if (!transcriptionCompletedRef.current) {
           setTranscriptionError("The live transcription connection closed unexpectedly.");
         }
@@ -753,31 +988,59 @@ function App() {
           audioContextRef.current = null;
           analyserRef.current = null;
           if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
-          setWaveform(Array(28).fill(8));
+          animationRef.current = null;
         }
         setIsTranscribing(false);
+        setTranscriptionPhase(null);
         transcriptionSocketRef.current = null;
       });
 
       finalTranscriptRef.current = "";
-      setLiveTranscript("Listening…");
+      setLiveTranscript("");
       setIsTranscribing(false);
       transcriptionStartRef.current = false;
       isRecordingRef.current = true;
+      setTranscriptionPhase("recording");
       setIsRecording(true);
 
-      const levels = new Uint8Array(analyser.frequencyBinCount);
-      const updateWaveform = () => {
-        analyser.getByteFrequencyData(levels);
-        setWaveform(
-          Array.from({ length: 28 }, (_, index) =>
-            Math.max(8, (levels[index % levels.length] / 255) * 100),
-          ),
-        );
+      const samples = new Uint8Array(analyser.fftSize);
+      let smoothedLevel = 0;
+      let peakLevel = 0;
+      lastWaveformSampleAtRef.current = performance.now();
+      const updateWaveform = (now: number) => {
+        analyser.getByteTimeDomainData(samples);
+        let energy = 0;
+        for (const sample of samples) energy += ((sample - 128) / 128) ** 2;
+        const rms = Math.sqrt(energy / samples.length);
+        const overallLevel = Math.max(0, Math.min(1, (rms - 0.002) * 35));
+        const smoothing = overallLevel > smoothedLevel ? 0.24 : 0.08;
+        smoothedLevel += (overallLevel - smoothedLevel) * smoothing;
+        peakLevel = Math.max(peakLevel, smoothedLevel);
+
+        const sampleInterval = WAVEFORM_SAMPLE_INTERVAL;
+        const elapsed = now - lastWaveformSampleAtRef.current;
+        const samplesToAdd = Math.floor(elapsed / sampleInterval);
+        if (samplesToAdd > 0) {
+          const levels = waveformLevelsRef.current;
+          const shifts = Math.min(samplesToAdd, levels.length || 1);
+          for (let index = 0; index < shifts; index += 1) {
+            if (levels.length) levels.shift();
+            levels.push(peakLevel);
+          }
+          peakLevel = smoothedLevel;
+          lastWaveformSampleAtRef.current += samplesToAdd * sampleInterval;
+        }
+        waveformOffsetRef.current = Math.min(1, Math.max(0, (now - lastWaveformSampleAtRef.current) / sampleInterval)) * WAVEFORM_BAR_PITCH;
+        if (waveformRef.current) drawWaveform(waveformRef.current, waveformLevelsRef.current, waveformOffsetRef.current);
         animationRef.current = requestAnimationFrame(updateWaveform);
       };
-      updateWaveform();
+      animationRef.current = requestAnimationFrame(updateWaveform);
     } catch (error) {
+      if (recordingSession !== recordingSessionRef.current) {
+        socket?.close();
+        stream?.getTracks().forEach((track) => track.stop());
+        return;
+      }
       socket?.close();
       stream?.getTracks().forEach((track) => track.stop());
       processorRef.current?.disconnect();
@@ -790,12 +1053,14 @@ function App() {
       streamRef.current = null;
       transcriptionSocketRef.current = null;
       setTranscriptionError(error instanceof Error ? error.message : "Could not start live transcription.");
+      setTranscriptionPhase(null);
       setLiveTranscript("");
       setIsRecording(false);
       setIsTranscribing(false);
       transcriptionStartRef.current = false;
       isRecordingRef.current = false;
       recordingTabIdRef.current = null;
+      resetWaveform();
     }
   }
 
@@ -805,9 +1070,10 @@ function App() {
     isRecordingRef.current = false;
     setIsRecording(false);
     setIsTranscribing(true);
-    setLiveTranscript(finalTranscriptRef.current || "Finalizing transcript…");
+    setTranscriptionPhase("finalizing");
+    setLiveTranscript(finalTranscriptRef.current);
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
-    setWaveform(Array(28).fill(8));
+    animationRef.current = null;
     processorRef.current?.disconnect();
     processorRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -823,6 +1089,7 @@ function App() {
       socket.send(JSON.stringify({ type: "end" }));
     } else {
       setIsTranscribing(false);
+      setTranscriptionPhase(null);
       setTranscriptionError("The live transcription connection is unavailable.");
       socket?.close();
     }
@@ -830,11 +1097,16 @@ function App() {
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await submitMessage(activeTab.message);
+  }
+
+  async function submitMessage(message: string) {
     const tabId = activeTab.id;
-    const text = activeTab.message.trim();
+    const text = message.trim();
 
     if (!text || activeTab.isSending || workspaceLoadStatus !== "ready") return;
 
+    setComposerExpanded(false);
     const startedAt = Date.now();
     const userMessageId = startedAt;
     const agentMessageId = userMessageId + 1;
@@ -923,6 +1195,16 @@ function App() {
     }
   }
 
+  function sendVoiceTranscript() {
+    const text = (liveTranscript || activeTab.message).trim();
+    if (!text || activeTab.isSending || workspaceLoadStatus !== "ready") return;
+
+    recordingTabIdRef.current = null;
+    if (isRecordingRef.current) stopRecording();
+    else if (transcriptionStartRef.current) cancelPendingRecordingStart();
+    void submitMessage(text);
+  }
+
   function stopAgent(tabId: number) {
     const activeRequest = [...requestMessagesRef.current.entries()].find(([, request]) => request.tabId === tabId && !request.stopRequested);
     if (!activeRequest) return;
@@ -955,6 +1237,7 @@ function App() {
 
   return (
     <main className={`app-shell ${activeTab.messages.length ? "has-messages" : "empty"}`}>
+      {!activeTab.messages.length && <HexBackground mode={hexMode} size={hexSize} intensity={hexIntensity} palette={hexPalette} media={hexMedia} />}
       <header className="title-bar">
         <nav className="tab-bar" aria-label="Agent tabs">
           {tabs.map((tab) => <div
@@ -1021,7 +1304,99 @@ function App() {
             ⚙
           </button>
           {isSettingsOpen && (
-            <div className="settings-popover" role="dialog" aria-label="Settings">
+            <div className="settings-popover" role="dialog" aria-label="Settings and background">
+              <div className="hex-settings-section">
+                <div className="hex-settings-heading">Hexagon background</div>
+                <div className="hex-mode-options" role="radiogroup" aria-label="Background fill">
+                  <label className={`hex-mode-choice ${hexMode === "synth" ? "selected" : ""}`}>
+                    <input type="radio" name="hex-background-fill" value="synth" checked={hexMode === "synth"} onChange={() => setHexMode("synth")} />
+                    <span>Synth</span>
+                  </label>
+                  <label className={`hex-mode-choice ${hexMode === "grid" ? "selected" : ""}`}>
+                    <input type="radio" name="hex-background-fill" value="grid" checked={hexMode === "grid"} onChange={() => setHexMode("grid")} />
+                    <span>No video</span>
+                  </label>
+                  <label className={`hex-mode-choice ${hexMode === "media" ? "selected" : ""}`}>
+                    <input
+                      type="radio"
+                      name="hex-background-fill"
+                      value="media"
+                      checked={hexMode === "media"}
+                      onChange={() => {
+                        if (hexMedia) setHexMode("media");
+                        else hexUploadRef.current?.click();
+                      }}
+                    />
+                    <span>Custom video</span>
+                  </label>
+                </div>
+                <input
+                  ref={hexUploadRef}
+                  className="hex-upload-input"
+                  type="file"
+                  accept="image/*,video/*"
+                  aria-label="Choose image or video for the hexagon background"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (!file) return;
+                    setHexMedia(file);
+                    setHexMediaName(file.name);
+                    setHexMode("media");
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <button className="hex-upload-button" type="button" onClick={() => hexUploadRef.current?.click()}>
+                  {hexMediaName || "Upload image or video"}
+                </button>
+                <label className="hex-range-row">
+                  <span><span>Hexagon size</span><output>{hexSize}px</output></span>
+                  <input type="range" min="2" max="34" value={hexSize} onChange={(event) => setHexSize(Number(event.target.value))} />
+                </label>
+                <label className="hex-range-row">
+                  <span><span>Contrast</span><output>{hexIntensity}%</output></span>
+                  <input type="range" min="10" max="100" step="5" value={hexIntensity} onChange={(event) => setHexIntensity(Number(event.target.value))} />
+                </label>
+                <div className="hex-palette-row">
+                  <span>Palette</span>
+                  <div role="group" aria-label="Hexagon palette">
+                    {(["mono", "binary", "color"] as const).map((palette) => (
+                      <button
+                        className={hexPalette === palette ? "selected" : ""}
+                        type="button"
+                        key={palette}
+                        aria-pressed={hexPalette === palette}
+                        onClick={() => setHexPalette(palette)}
+                      >{palette === "mono" ? "Mono" : palette === "binary" ? "Binary" : "Color"}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="hex-settings-section mascot-settings-section">
+                <div className="hex-settings-heading">Mascot</div>
+                <label className="hex-range-row">
+                  <span><span>Eye width</span><output>{mascotEyeWidth}px</output></span>
+                  <input type="range" min="12" max="38" value={mascotEyeWidth} onChange={(event) => setMascotEyeWidth(Number(event.target.value))} />
+                </label>
+                <label className="hex-range-row">
+                  <span><span>Eye length</span><output>{mascotEyeLength}px</output></span>
+                  <input type="range" min="32" max="82" value={mascotEyeLength} onChange={(event) => setMascotEyeLength(Number(event.target.value))} />
+                </label>
+              </div>
+              <div className="hex-settings-section center-backdrop-settings-section">
+                <div className="hex-settings-heading">Center backdrop</div>
+                <label className="hex-range-row">
+                  <span><span>Blur</span><output>{centerBlur}px</output></span>
+                  <input type="range" min="0" max="16" value={centerBlur} onChange={(event) => setCenterBlur(Number(event.target.value))} />
+                </label>
+                <label className="hex-range-row">
+                  <span><span>Darken</span><output>{centerDarken}%</output></span>
+                  <input type="range" min="0" max="60" value={centerDarken} onChange={(event) => setCenterDarken(Number(event.target.value))} />
+                </label>
+                <label className="hex-range-row">
+                  <span><span>Side spread</span><output>{centerSideSpread}px</output></span>
+                  <input type="range" min="0" max="240" step="4" value={centerSideSpread} onChange={(event) => setCenterSideSpread(Number(event.target.value))} />
+                </label>
+              </div>
               <label className="settings-row">
                 <span>Thread ID</span>
                 <input
@@ -1069,29 +1444,79 @@ function App() {
       </section>
 
       <section key={activeTab.id} className="chat-panel tab-content-enter">
-      <h1 className="welcome">Triton</h1>
+      <div
+        className={`welcome-stage ${isTyping ? "is-typing" : ""} ${isRecording || isTranscribing ? "is-listening" : ""}`}
+        style={{
+          "--center-blur": `${centerBlur}px`,
+          "--center-darken-peak": String(centerDarken / 100),
+          "--center-darken-mid": String(centerDarken * 0.0065),
+          "--center-darken-edge": String(centerDarken * 0.003),
+          "--typing-blur": `${Math.max(0, Math.min(16, 28 - centerBlur))}px`,
+          "--typing-darken-peak": String(Math.max(0, Math.min(75, 100 - centerDarken)) / 100),
+          "--typing-darken-mid": String(Math.max(0, Math.min(75, 100 - centerDarken)) * 0.0065),
+          "--typing-darken-edge": String(Math.max(0, Math.min(75, 100 - centerDarken)) * 0.003),
+          "--typing-expand": "50px",
+          "--center-side-inset": `${-centerSideSpread}px`,
+        } as CSSProperties}
+      >
+      <h1 className="welcome">
+        <TritonMascot isListening={isRecording} isThinking={activeTab.isSending || isTranscribing} isTyping={isTyping} isActive={!activeTab.messages.length} eyeWidth={mascotEyeWidth} eyeLength={mascotEyeLength} />
+        <span className="welcome-copy">
+          <span className="welcome-title">triton.</span>
+          <span className="welcome-subtitle">Dare Mighty Things</span>
+        </span>
+      </h1>
 
-      <form className="composer" onSubmit={sendMessage}>
-        {isRecording ? (
+      <form className={`composer ${isRecording || isTranscribing ? "voice-mode" : ""} ${composerExpanded ? "is-multiline" : ""}`} onSubmit={sendMessage}>
+        {isRecording || isTranscribing ? (
           <>
-            <div className="recording-status">
-              <div className="waveform" aria-label="Recording audio">
-                {waveform.map((height, index) => (
-                  <span key={index} style={{ height: `${height}%` }} />
-                ))}
-              </div>
-              <span className="live-transcript" aria-live="polite">{liveTranscript || "Listening…"}</span>
+            <div
+              className={`live-transcript-input ${liveTranscript ? "" : "is-placeholder"}`}
+              role="textbox"
+              aria-label="Live transcript"
+              aria-readonly="true"
+              aria-live="polite"
+            >
+              {liveTranscript || (transcriptionPhase === "connecting"
+                ? "Connecting to microphone…"
+                : transcriptionPhase === "finalizing"
+                  ? "Finalizing transcript…"
+                  : "Listening…")}
             </div>
-            <button className="stop-recording-button" type="button" onClick={stopRecording}>Done</button>
+            <div className="voice-controls">
+              <canvas ref={waveformRef} className="waveform" role="img" aria-label="Recent microphone level history" />
+              <button
+                className="mic-button"
+                type="button"
+                aria-label={isRecording ? "Stop live transcription" : "Live transcription"}
+                title={isRecording ? "Stop live transcription" : "Live transcription"}
+                disabled={!isRecording}
+                onClick={stopRecording}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="3" width="6" height="12" rx="3" />
+                  <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8" />
+                </svg>
+              </button>
+              <button
+                className="send-button"
+                type="button"
+                aria-label="Send transcript"
+                title="Send transcript"
+                disabled={activeTab.isSending || workspaceLoadStatus !== "ready"}
+                onClick={sendVoiceTranscript}
+              >
+                <img className="send-button-image" src={sendButtonImage} alt="" aria-hidden="true" />
+              </button>
+              {activeTab.isSending && <button className="stop-button" type="button" onClick={() => stopAgent(activeTab.id)} aria-label="Stop agent">Stop</button>}
+            </div>
           </>
-        ) : isTranscribing ? (
-          <div className="transcribing" aria-label="Transcribing audio">
-            <span className="spinner" />
-            <span className="live-transcript" aria-live="polite">{liveTranscript || "Finalizing transcript…"}</span>
-          </div>
         ) : (
-          <input
+          <textarea
+            ref={composerTextareaRef}
+            className="message-input"
             aria-label="Message"
+            rows={1}
             value={activeTab.message}
             onChange={(event) => updateActiveTab({ message: event.target.value })}
             onKeyDown={(event) => {
@@ -1124,10 +1549,13 @@ function App() {
             </svg>
           </button>
         )}
-        {activeTab.isSending
+        {!isRecording && !isTranscribing && (activeTab.isSending
           ? <button className="stop-button" type="button" onClick={() => stopAgent(activeTab.id)} aria-label="Stop agent">Stop</button>
-          : <button type="submit" disabled={isRecording || isTranscribing || workspaceLoadStatus !== "ready"}>Send</button>}
+          : <button className="send-button" type="submit" aria-label="Send message" title="Send message" disabled={workspaceLoadStatus !== "ready"}>
+            <img className="send-button-image" src={sendButtonImage} alt="" aria-hidden="true" />
+          </button>)}
       </form>
+      </div>
       {transcriptionError && <div className="transcription-error" role="alert">{transcriptionError}</div>}
       {!activeTab.messages.length && <div className="audio-shortcut-hint">Ctrl+Shift+D for audio mode</div>}
 

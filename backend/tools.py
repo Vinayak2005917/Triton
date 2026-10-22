@@ -1,6 +1,7 @@
 
 import os
 import asyncio
+from datetime import datetime, timezone
 import serpapi
 import requests
 from ddgs import DDGS
@@ -23,36 +24,9 @@ if not api_key:
 if not os.getenv("SERP_API_KEY"):
     raise RuntimeError("SERP_API_KEY is not set")
 
-summary_model = ChatOpenAI(
-    model="google/gemini-2.5-flash-lite",
-    base_url="https://api.aicredits.in/v1",
-    api_key=api_key,
-)
 
-async def read_webpage(url: str, query: str):
-    try:
-        debug_print(f"Reading webpage {url[:100]} for query: {query}")
-        response = await asyncio.to_thread(requests.get,f"https://r.jina.ai/{url}",timeout=30)
-        response.raise_for_status()
-        summarized_response = await summary_model.ainvoke(f"Summarize the information relevant to this question: Question: {query} Webpage content: {response.text}")
-        return summarized_response.content[:6000]
-    except Exception as e:
-        return f"Error {e} occured, STOP using this tool."
 
-@tool("Get_relevant_webpages", description="Search the web for relevant webpages.")
-def Get_relevant_webpages(query: str):
-    send_tool_update("Searching the web", "Get_relevant_webpages")
-    try:
-        debug_print(f"Searching the web for: {query}")
-        results = DDGS().text(query, max_results=5)
-        debug_print(f"Found & Sent {len(results)} results for query: {query}")
-        return "\n\n".join(
-            f"Title: {item['title']}\nLink: {item['href']}\nDescription: {item['body']}"
-            for item in results
-        )
-    except Exception as e:
-        return f"Error {e} occured, STOP using this tool."
-
+"""
 @tool("batch_read_pages", description="Read a batch webpages of {'url':'query', 'url':'query'}, never more than 5")
 async def batch_read_pages(pages: dict[str, str]):
     send_tool_update("Reading selected webpages", "batch_read_pages")
@@ -78,6 +52,8 @@ async def batch_read_pages(pages: dict[str, str]):
         return "\n\n--- NEXT WEBPAGE ---\n\n".join(output)
     except Exception as e:
         return f"Error {e} occured, STOP using this tool."
+"""
+
 
 @tool("search_images", description="Search for images based on a query.")
 def search_images(query, num_images=5):
@@ -210,31 +186,5 @@ def check_weather(location):
     except Exception as e:
         return f"Error {e} occured, STOP using this tool."
 
-@tool("get_wiki_page", description="Get the Wikipedia page for a given topic. Caution : The wiki page can be very long.")
-def get_wiki_page(topic, query):
-    send_tool_update("Reading Wikipedia", "get_wiki_page")
-    try:
-        debug_print(f"Fetching Wikipedia page for topic: {topic} with query: {query}")
-        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={quote(topic)}&format=json"
-        search_response = requests.get(search_url)
-        search_data = search_response.json()
 
-        if not search_data["query"]["search"]:
-            debug_print(f"No Wikipedia page found for topic: {topic}")
-            return "No Wikipedia page found for this topic."
 
-        page_title = search_data["query"]["search"][0]["title"]
-        page_url = f"https://en.wikipedia.org/wiki/{quote(page_title)}"
-
-        page_response = requests.get(page_url)
-        soup = BeautifulSoup(page_response.content, "html.parser")
-        paragraphs = soup.find_all("p")
-
-        content = "\n".join(p.get_text() for p in paragraphs if p.get_text().strip())
-
-        summarized_content = summary_model.invoke(f"Summarize the information relevant to this question: Question: {query} Wikipedia content: {content}. DO NOT INCLUDE ANY INFORMATION THAT IS NOT MENTIONED IN THE WIKIPEDIA PAGE.")
-
-        debug_print(f"Wikipedia page fetched and summarized for topic: {topic}")
-        return summarized_content.content
-    except Exception as e:
-        return f"Error {e} occured, STOP using this tool."

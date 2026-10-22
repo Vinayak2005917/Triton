@@ -1,12 +1,16 @@
 import json
+import hashlib
 import os
 import sys
 import sqlite3
 import threading
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from vector_search import VECTOR_SIZE, embed_texts, semantic_search
 
 
 def _utc_now() -> str:
@@ -29,6 +33,8 @@ class ConversationStore:
         self.path = Path(path) if path else data_dir / "triton.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._vector_lock = threading.RLock()
+        self._vector_client = None
 
     @contextmanager
     def _connection(self):
@@ -73,7 +79,172 @@ class ConversationStore:
                     ON workspace_snapshots(thread_id, id DESC);
                 CREATE INDEX IF NOT EXISTS conversations_updated_idx
                     ON conversations(updated_at DESC);
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
             """)
+
+    def get_install_id(self) -> str:
+        """Return a stable ID used to isolate this installation's vector data."""
+        with self._lock, self._connection() as connection:
+            row = connection.execute(
+                "SELECT value FROM app_settings WHERE key = 'install_id'"
+            ).fetchone()
+            if row:
+                return str(row["value"])
+            install_id = str(uuid.uuid4())
+            connection.execute(
+                "INSERT INTO app_settings(key, value) VALUES ('install_id', ?)",
+                (install_id,),
+            )
+        return install_id
+
+    @property
+    def vector_store_initialized(self) -> bool:
+        return self._vector_client is not None
+
+    @property
+    def vector_client(self):
+        if self._vector_client is None:
+            raise RuntimeError("Qdrant storage has not been initialized")
+        return self._vector_client
+
+    @property
+    def vector_lock(self):
+        return self._vector_lock
+
+    def initialize_vector_storage(
+        self,
+        collection_names: tuple[str, ...],
+        vector_size: int = VECTOR_SIZE,
+    ) -> None:
+        """Open persistent local Qdrant storage and ensure its collections exist."""
+        from qdrant_client import QdrantClient, models
+
+        with self._vector_lock:
+            if self._vector_client is None:
+                qdrant_path = self.path.parent / "qdrant"
+                self._vector_client = QdrantClient(
+                    path=str(qdrant_path),
+                    # All access is serialized by _vector_lock.
+                    force_disable_check_same_thread=True,
+                )
+
+            for collection_name in collection_names:
+                if not self._vector_client.collection_exists(collection_name):
+                    self._vector_client.create_collection(
+                        collection_name=collection_name,
+                        vectors_config=models.VectorParams(
+                            size=vector_size,
+                            distance=models.Distance.COSINE,
+                        ),
+                    )
+
+    def close_vector_storage(self) -> None:
+        with self._vector_lock:
+            if self._vector_client is not None:
+                self._vector_client.close()
+                self._vector_client = None
+
+    def upsert_vector_records(
+        self,
+        collection_name: str,
+        records: list[dict[str, Any]],
+        owner_id: str | None = None,
+    ) -> int:
+        """Upsert already-embedded text records into a Qdrant collection."""
+        from qdrant_client import models
+
+        if not records:
+            return 0
+        install_id = owner_id or self.get_install_id()
+        points = []
+        for record in records:
+            text = str(record.get("text") or "").strip()
+            vector = record.get("vector")
+            if not text or not isinstance(vector, list):
+                continue
+            if len(vector) != VECTOR_SIZE:
+                raise ValueError(
+                    f"Expected {VECTOR_SIZE}-dimensional embeddings, got {len(vector)}"
+                )
+            metadata = dict(record.get("metadata") or {})
+            metadata.pop("owner_id", None)
+            metadata.pop("text", None)
+            point_id = record.get("id")
+            if not point_id:
+                source = str(metadata.get("source_url") or "")
+                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+                point_id = str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"{install_id}:{collection_name}:{source}:{digest}",
+                    )
+                )
+            points.append(
+                models.PointStruct(
+                    id=str(point_id),
+                    vector=vector,
+                    payload={
+                        **metadata,
+                        "text": text,
+                        "owner_id": install_id,
+                    },
+                )
+            )
+
+        if not points:
+            return 0
+        with self._vector_lock:
+            self.vector_client.upsert(
+                collection_name=collection_name,
+                points=points,
+                wait=True,
+            )
+        return len(points)
+
+    def upsert_text_records(
+        self,
+        collection_name: str,
+        records: list[dict[str, Any]],
+        owner_id: str | None = None,
+    ) -> int:
+        """Embed and upsert text records using Triton's shared embedding model."""
+        texts = [str(record.get("text") or "").strip() for record in records]
+        valid_indexes = [index for index, text in enumerate(texts) if text]
+        if not valid_indexes:
+            return 0
+        vectors = embed_texts([texts[index] for index in valid_indexes])
+        vector_records = []
+        for index, vector in zip(valid_indexes, vectors):
+            record = records[index]
+            vector_records.append({
+                "id": record.get("id"),
+                "text": texts[index],
+                "vector": vector,
+                "metadata": record.get("metadata") or {},
+            })
+        return self.upsert_vector_records(collection_name, vector_records, owner_id)
+
+    def search_vectors(
+        self,
+        collection_name: str,
+        query: str,
+        limit: int = 5,
+        owner_id: str | None = None,
+        query_vector: list[float] | None = None,
+    ) -> list[Any]:
+        """Search one collection, scoped to this installation by default."""
+        with self._vector_lock:
+            return semantic_search(
+                self.vector_client,
+                collection_name,
+                query,
+                owner_id or self.get_install_id(),
+                limit=limit,
+                query_vector=query_vector,
+            )
 
     @staticmethod
     def _clean_state(state: dict[str, Any]) -> dict[str, Any]:
