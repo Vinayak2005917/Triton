@@ -1,13 +1,19 @@
-# Tauri + React + Typescript
+# Triton
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Triton is an experimental desktop AI assistant in early development.
 
+![Triton new-tab page preview](New%20tab%20page.png)
+
+## Tech stack
+
+- **React, TypeScript, and Vite** power the chat interface and interactive workspace.
+- **Tauri 2 and Rust** package and run Triton as a desktop app.
+- **Python and FastAPI** provide the backend; **LangGraph** coordinates the AI agent, web research, and memory.
+- **Fermion** handles live microphone transcription, and **ElevenLabs** generates spoken responses.
+
+## Roadmap
+
+Triton is still at a very early stage. Planned work includes an always-on agent.
 ## Live transcription
 
-When Triton opens, it starts `fermion serve phonon-2 --port 8001` from the repository's `backend` directory. The live microphone stream connects to that server; the Triton API continues to use port 8000. `uv` must be available on `PATH`. Triton stops the server process when the app exits.
-
-To run the standalone `backend/testing.py` client, start the same server manually from `backend` first.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+On launch, Triton runs `uv run fermion serve phonon-2 --port 8001` from `backend` for live microphone input. The Triton API runs on port `8000`; `uv` must be available on `PATH`.
